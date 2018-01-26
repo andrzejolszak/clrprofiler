@@ -2458,6 +2458,26 @@ namespace CLRProfiler
                             break;
                         }
 
+                        case '#':
+                        {
+                            c = ReadChar();
+                            int typeSizeStackTraceIndex = ReadInt();
+                            typeSizeStackTraceIndex = stacktraceTable.MapTypeSizeStacktraceId(typeSizeStackTraceIndex);
+                            if (c != -1)
+                            {
+                                //if (readLogResult.liveObjectTable != null)
+                                //   readLogResult.liveObjectTable.InsertObject(id, typeSizeStackTraceIndex, lastTickIndex, lastTickIndex, true, readLogResult.sampleObjectTable);
+                                if (pos >= startFileOffset && pos < endFileOffset && readLogResult.allocatedHistogram != null)
+                                {
+                                    // readLogResult.calls.Add(new CallOrAlloc(false, typeSizeStackTraceIndex));
+                                    readLogResult.allocatedHistogram.AddObject(typeSizeStackTraceIndex, 1);
+                                }
+                            }
+                            readLogResult.hadAllocInfo = true;
+                            readLogResult.hadCallInfo = true;
+                            break;
+                        }
+
                         case    'A':
                         case    'a':
                         {

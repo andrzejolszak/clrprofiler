@@ -41,6 +41,7 @@
 #define	OMV_INITIAL_SETTING     "OMV_INITIAL_SETTING"
 #define OMV_TARGET_CLR_VERSION  "OMV_TargetCLRVersion"
 #define OMV_WINDOWSSTOREAPP     "OMV_WINDOWSSTOREAPP"
+#define SAMPLING_PERCENT		"SAMPLING_PERCENT"
 
 
 /***************************************************************************************

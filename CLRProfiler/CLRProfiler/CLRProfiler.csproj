@@ -41,7 +41,7 @@
     </ApplicationIcon>
     <AssemblyKeyContainerName>
     </AssemblyKeyContainerName>
-    <AssemblyName>CLRProfiler</AssemblyName>
+    <AssemblyName>CLRProfilerLight</AssemblyName>
     <AssemblyOriginatorKeyFile>
     </AssemblyOriginatorKeyFile>
     <DefaultClientScript>JScript</DefaultClientScript>
@@ -267,9 +267,7 @@
     <Compile Include="TimeLineViewForm.cs">
       <SubType>Form</SubType>
     </Compile>
-    <Compile Include="TreeListView.cs">
-      <SubType>Component</SubType>
-    </Compile>
+    <Compile Include="TreeListView.cs" />
     <Compile Include="Vertex.cs">
       <SubType>Code</SubType>
     </Compile>

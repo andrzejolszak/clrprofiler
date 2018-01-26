@@ -100,6 +100,7 @@ struct ProfConfig
     DWORD dwInitialSetting;
     DWORD dwDefaultTimeoutMs;
     BOOL  bWindowsStoreApp;
+    DWORD dwSampling;
 };
 
 /***************************************************************************************
@@ -549,6 +550,10 @@ class ProfilerCallback :
         BOOL m_oldFormat;
         BOOL m_bTargetV2CLR;
         DWORD m_dwSentinelHandle;
+		BOOL m_IsMinimalLog;
+		UINT m_AllocationSampling;
+		UINT m_CurrentAllocationSample;
+        DWORD m_dwSampling;
         
         // file stuff
         FILE *m_stream;

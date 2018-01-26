@@ -535,12 +535,17 @@ ProfilerCallback::ProfilerCallback() :
     m_callStackCount( 0 ),
     m_bTargetV2CLR( FALSE ),
     m_dwSentinelHandle(SENTINEL_HANDLE),
-	m_bWindowsStoreApp(FALSE)
+	m_bWindowsStoreApp(FALSE),
+	m_dwSampling(0xFFFFFFFF)
 {
 } // ctor
 
 HRESULT ProfilerCallback::Init(ProfConfig * pProfConfig)
 {
+	m_IsMinimalLog = TRUE;
+	m_AllocationSampling = 100 / m_dwSampling;
+	m_CurrentAllocationSample = 0;
+
     HRESULT hr = S_OK;
     memset(&m_GCcounter, 0, sizeof(m_GCcounter));
     memset(&m_condemnedGeneration, 0, sizeof(m_condemnedGeneration));
@@ -548,7 +553,8 @@ HRESULT ProfilerCallback::Init(ProfConfig * pProfConfig)
     FunctionInfo *pFunctionInfo = NULL;
 
     
-    TEXT_OUTLN( "CLR Object Profiler Tool - turning off profiling for child processes" )
+	TEXT_OUTLN("CLR Object Profiler Tool - turning off profiling for child processes")
+	printf("Sampling every Nth allocation on Small Object Heap, N=%u\n", m_AllocationSampling);
     SetEnvironmentVariableW(L"Cor_Enable_Profiling", L"0x0");
     SetEnvironmentVariableW(L"CoreCLR_Enable_Profiling", L"0x0");
     
@@ -2056,24 +2062,43 @@ HRESULT ProfilerCallback::ObjectAllocated( ObjectID objectID,
             hr = m_pProfilerInfo->GetObjectSize( objectID, &mySize );
             if ( SUCCEEDED( hr ) )
             {
-                if (_GetTickCount() - m_lastTickCount >= CLOCK_TICK_INC)
+				// Sampling only enabled for non-LOH allocations
+				if (mySize < 85000) 
+				{
+					m_CurrentAllocationSample = m_CurrentAllocationSample + 1;
+					if (m_CurrentAllocationSample < m_AllocationSampling)
+						return S_OK;
+
+					m_CurrentAllocationSample = 0;
+				}
+
+                if (_GetTickCount() - m_lastTickCount >= 100) // log current time not more often than once every 100 ms
                     _LogTickCount();
 
                 SIZE_T stackTraceId = _StackTraceId(classID, mySize);
 #if 1
                 char buffer[128];
                 char *p = buffer;
-                if (m_oldFormat)
-                {
-                    *p++ = 'a';
-                }
-                else
-                {
-                    *p++ = '!';
-                    p = putdec(p, pThreadInfo->m_win32ThreadID);
-                }
-                p = puthex(p, objectID);
-                p = putdec(p, stackTraceId);
+				// Put only the stackTraceId in the minimal log, as we can't use threadId and objectId for anything due to not capturing GC rellocs 
+				if (m_IsMinimalLog)
+				{
+					*p++ = '#';
+				}
+				else 
+				{
+					if (m_oldFormat)
+					{
+						*p++ = 'a';
+					}
+					else
+					{
+						*p++ = '!';
+						p = putdec(p, pThreadInfo->m_win32ThreadID);
+					}
+					p = puthex(p, objectID);
+				}
+
+				p = putdec(p, stackTraceId);
                 *p++ = '\n';
                 fwrite(buffer, p - buffer, 1, m_stream);
 #else
@@ -3287,6 +3312,9 @@ HRESULT ProfilerCallback::MovedReferences( ULONG cmovedObjectIDRanges,
                                            ObjectID newObjectIDRangeStart[],
                                            ULONG cObjectIDRangeLength[] )
 {
+	if (m_IsMinimalLog)
+		return S_OK;
+
     if ((m_dwMode & OBJECT) == 0)
         return S_OK;
 
@@ -3322,6 +3350,9 @@ HRESULT ProfilerCallback::SurvivingReferences( ULONG cmovedObjectIDRanges,
                                                ObjectID objectIDRangeStart[],
                                                ULONG cObjectIDRangeLength[] )
 {
+	if (m_IsMinimalLog)
+		return S_OK;
+
     if ((m_dwMode & OBJECT) == 0)
         return S_OK;
 
@@ -3855,6 +3886,9 @@ HRESULT ProfilerCallback::HandleCreated(
             /* [in] */ UINT_PTR handleId,
             /* [in] */ ObjectID initialObjectId)
 {
+	if (m_IsMinimalLog)
+		return S_OK;
+
     ///////////////////////////////////////////////////////////////////////////
     Synchronize guard( m_criticalSection );
     ///////////////////////////////////////////////////////////////////////////  
@@ -3880,6 +3914,9 @@ HRESULT ProfilerCallback::HandleCreated(
 HRESULT ProfilerCallback::HandleDestroyed(
             /* [in] */ UINT_PTR handleId)
 {
+	if (m_IsMinimalLog)
+		return S_OK;
+
     ///////////////////////////////////////////////////////////////////////////
     Synchronize guard( m_criticalSection );
     ///////////////////////////////////////////////////////////////////////////  
@@ -4206,6 +4243,9 @@ void ProfilerCallback::_GetProfConfigFromEnvironment(ProfConfig * pProfConfig)
             pProfConfig->dwFramesToPrint = BASEHELPER::FetchEnvironment( OMV_FRAMENUMBER );
         }
 
+        DWORD dwSampling = BASEHELPER::FetchEnvironment(SAMPLING_PERCENT);
+        pProfConfig->dwSampling = (dwSampling != 0x0 && dwSampling != 0xFFFFFFFF) ? dwSampling : 0;
+
         //
         // how many objects you wish to skip
         //
@@ -4405,6 +4445,8 @@ void ProfilerCallback::_ProcessProfConfig(ProfConfig * pProfConfig)
     }
 
     m_bWindowsStoreApp = pProfConfig->bWindowsStoreApp;
+
+	m_dwSampling = pProfConfig->dwSampling;
 
 //  printf("m_bTrackingObjects = %d  m_bTrackingCalls = %d\n", m_bTrackingObjects, m_bTrackingCalls);
 
@@ -5129,6 +5171,9 @@ SIZE_T ProfilerCallback::_StackTraceId(SIZE_T typeId, SIZE_T typeSize)
 /* private */
 HRESULT ProfilerCallback::_LogCallTrace( FunctionID functionID )
 {
+	if (m_IsMinimalLog)
+		return S_OK;
+
     ///////////////////////////////////////////////////////////////////////////
     Synchronize guard( m_criticalSection );
     ///////////////////////////////////////////////////////////////////////////  

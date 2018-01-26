@@ -1,35 +1,30 @@
 /* ==++==
- * 
+ *
  *   Copyright (c) Microsoft Corporation.  All rights reserved.
- * 
+ *
  * ==--==
  *
  * Class:  Form1
  *
  * Description: CLR Profiler interface and logic
  */
+
 using System;
-using System.Drawing;
-using System.Collections;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Windows.Forms;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Text;
-using System.IO;
-using System.Threading;
-using System.Runtime.InteropServices;
-using System.Security;
-using System.Security.AccessControl;
-using System.Security.Principal;
+using System.Drawing;
 using System.Globalization;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+using System.Windows.Forms;
 using System.Xml;
 using Microsoft.Win32.SafeHandles;
 
 namespace CLRProfiler
 {
-
     // IMPORTANT: ProfConfig structure has a counterpart native structure defined
     // in ProfilerCallback.h.  Both must always be in sync.
     [Flags]
@@ -46,16 +41,21 @@ namespace CLRProfiler
     {
         public OmvUsage usage;
         public int bOldFormat;
+
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
         public string szPath;
+
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
         public string szFileName;
+
         public int bDynamic;
         public int bStack;
         public uint dwFramesToPrint;
         public uint dwSkipObjects;
+
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
         public string szClassToMonitor;
+
         public uint dwInitialSetting;
         public uint dwDefaultTimeoutMs;
         public bool bWindowsStoreApp;
@@ -66,187 +66,219 @@ namespace CLRProfiler
     /// </summary>
     public class MainForm : System.Windows.Forms.Form
     {
-        private class WindowsStoreAppProfileeInfo
-        {
-            public WindowsStoreAppProfileeInfo(string packageFullNameParam, string acSidString)
-            {
-                packageFullName = packageFullNameParam;
-                windowsStoreAppEventPrefix = string.Format("AppContainerNamedObjects\\{0}\\", acSidString);
-            }
+        internal static MainForm instance;
 
-            public string windowsStoreAppEventPrefix;
-            public string packageFullName;
-        }
+        internal Font font;
+
+        internal ReadNewLog log;
+
+        internal ReadLogResult lastLogResult;
+
+        internal bool noUI = true;
+
+        internal string prevlogFileName;
+
+        internal string currlogFileName;
+
+        internal string difflogFileName;
+
+        internal Graph.GraphType graphtype = Graph.GraphType.Invalid;
+
+        internal bool viewdiff = false;
+
+        internal bool exitProgram = false;
+
+        private static ConsoleCtrl consoleCtrl;
 
         private System.Windows.Forms.MenuItem menuItem1;
+
         private System.Windows.Forms.MenuItem menuItem3;
+
         private System.Windows.Forms.MainMenu mainMenu;
+
         private System.Windows.Forms.MenuItem exitMenuItem;
+
         private System.ComponentModel.IContainer components;
 
         private System.Windows.Forms.OpenFileDialog openFileDialog;
+
         private System.Windows.Forms.MenuItem menuItem5;
+
         private System.Windows.Forms.MenuItem fontMenuItem;
+
         private System.Windows.Forms.MenuItem logFileOpenMenuItem;
+
         private System.Windows.Forms.MenuItem profileApplicationMenuItem;
+
         private System.Windows.Forms.Button startApplicationButton;
+
         private System.Windows.Forms.CheckBox profilingActiveCheckBox;
+
         private System.Windows.Forms.Button killApplicationButton;
+
         private System.Windows.Forms.GroupBox groupBox1;
+
         private System.Windows.Forms.Label label1;
+
         private System.Windows.Forms.Timer checkProcessTimer;
+
         private System.Windows.Forms.MenuItem setCommandLineMenuItem;
+
         private System.Windows.Forms.FontDialog fontDialog;
 
-        internal Font font;
         private Process profiledProcess;
+
         private string processFileName;
+
         private string serviceName;
+
         private string serviceAccountSid;
+
         private string serviceStartCommand;
+
         private string serviceStopCommand;
+
         private string logFileName;
+
         private long logFileStartOffset;
+
         private long logFileEndOffset;
-        internal ReadNewLog log;
-        internal ReadLogResult lastLogResult;
+
         private NamedManualResetEvent loggingActiveEvent;
+
         private NamedManualResetEvent forceGcEvent;
+
         private NamedManualResetEvent loggingActiveCompletedEvent;
+
         private NamedManualResetEvent forceGcCompletedEvent;
+
         private NamedManualResetEvent callGraphActiveEvent;
+
         private NamedManualResetEvent callGraphActiveCompletedEvent;
+
         private NamedManualResetEvent detachEvent;
+
         private WindowsStoreAppProfileeInfo windowsStoreAppProfileeInfo;
+
         private System.Windows.Forms.Button showHeapButton;
+
         private string commandLine = "";
+
         private string workingDirectory = "";
+
         private string logDirectory;
+
         private int attachTargetPID;
+
         private SafeFileHandle handshakingPipeHandle;
+
         private SafeFileHandle loggingPipeHandle;
+
         private FileStream handshakingPipe;
+
         private FileStream loggingPipe;
+
         private System.Windows.Forms.MenuItem menuItem8;
+
         private System.Windows.Forms.MenuItem viewTimeLineMenuItem;
+
         private System.Windows.Forms.SaveFileDialog saveFileDialog;
-        internal static MainForm instance;
+
         private System.Windows.Forms.MenuItem saveAsMenuItem;
+
         private System.Windows.Forms.MenuItem viewHistogramAllocatedMenuItem;
+
         private System.Windows.Forms.MenuItem viewHistogramRelocatedMenuItem;
+
         private System.Windows.Forms.MenuItem viewHistogramFinalizerMenuItem;
+
         private System.Windows.Forms.MenuItem viewHistogramCriticalFinalizerMenuItem;
+
         private System.Windows.Forms.MenuItem viewHeapGraphMenuItem;
+
         private System.Windows.Forms.MenuItem viewCallGraphMenuItem;
+
         private System.Windows.Forms.MenuItem viewAllocationGraphMenuItem;
+
         private System.Windows.Forms.MenuItem viewObjectsByAddressMenuItem;
+
         private System.Windows.Forms.MenuItem viewHistogramByAgeMenuItem;
+
         private System.Windows.Forms.MenuItem profileASP_NETmenuItem;
+
         private System.Windows.Forms.MenuItem profileServiceMenuItem;
+
         private System.Windows.Forms.MenuItem viewFunctionGraphMenuItem;
+
         private System.Windows.Forms.MenuItem viewModuleGraphMenuItem;
+
         private System.Windows.Forms.MenuItem viewClassGraphMenuItem;
+
         private System.Windows.Forms.MenuItem viewCommentsMenuItem;
+
         private System.Windows.Forms.CheckBox allocationsCheckBox;
+
         private System.Windows.Forms.CheckBox callsCheckBox;
+
         private System.Windows.Forms.MenuItem viewCallTreeMenuItem;
+
         private System.Windows.Forms.MenuItem viewAssemblyGraphMenuItem;
+
         private bool saveNever;
+
         private bool gcOnLogFileComments;
 
-        private enum CLRSKU
-        {
-            V4DesktopCLR,
-            V4CoreCLR,
-            V2DesktopCLR,
-        };
-
-        internal bool noUI = true;
         private string nameToUse;
+
         private bool profileAllocations, profileCalls, profilingActive;
+
         private bool trackCallStacks = true;
+
         private bool profilerConnected = false;
+
         private CLRSKU targetCLRVersion = CLRSKU.V4DesktopCLR;
+
         private string profilingURL = null;
 
         private bool help;
-        internal string prevlogFileName;
-        internal string currlogFileName;
-        internal string difflogFileName;
-        internal Graph.GraphType graphtype = Graph.GraphType.Invalid;
-        private System.Windows.Forms.MenuItem menuItem2;
-        private System.Windows.Forms.MenuItem viewComparisonMenuItem;
-        internal bool viewdiff = false;
-        internal bool exitProgram = false;
 
-        private enum ReportKind
-        {
-            NoReport,
-            AllocationReport,
-            RelocationReport,
-            SurvivorReport,
-            SurvivorDifferenceReport,
-            HeapDumpReport,
-            LeakReport,
-            FinalizerReport,
-            CriticalFinalizerReport,
-            CommentReport,
-        };
+        private System.Windows.Forms.MenuItem menuItem2;
+
+        private System.Windows.Forms.MenuItem viewComparisonMenuItem;
 
         private ReportKind reportKind;
+
         private string startMarker = null;
+
         private string endMarker = null;
+
         private System.Windows.Forms.MenuItem viewSummaryMenuItem;
+
         private Button attachProcessButton;
+
         private GroupBox groupBox2;
+
         private Label label2;
+
         private Button detachProcessButton;
+
         private ComboBox targetCLRVersioncomboBox;
-        private Button startURLButton;
+
         private MenuItem startURLMenuItem;
+
         private MenuItem attachProcessMenuItem;
+
         private MenuItem detachProcessMenuItem;
+
         private string[] timeMarker = new string[0];
-        private Button startWindowsStoreAppButton;
+
         private MenuItem menuStartWindowsStoreApp;
 
+        private Label label3;
+
+        private TextBox textBox1;
+
         private uint maxWaitingTimeInMiliseconds = 10000;
-
-        internal bool IsProfilingWindowsStoreApp()
-        {
-            return (windowsStoreAppProfileeInfo != null);
-        }
-
-
-        internal void CommandLineError(string message)
-        {
-            if (!noUI)
-            {
-                MessageBox.Show(message, "Report Profiler");
-                ShowUsage();
-            }
-            else
-            {
-                Console.WriteLine(message);
-            }
-        }
-
-        internal void CommandLineError(string message, params object[] args)
-        {
-            CommandLineError(string.Format(message, args));
-        }
-
-        internal string FetchArgument(string[] arguments, ref int i)
-        {
-            i++;
-            if (arguments.Length > i)
-                return arguments[i];
-            else
-            {
-                CommandLineError("Option {0} expects an argument", arguments[i - 1]);
-                return "";
-            }
-        }
 
         public MainForm(string[] arguments)
         {
@@ -259,7 +291,7 @@ namespace CLRProfiler
             profileAllocations = profileCalls = profilingActive = true;
 
             //Check ProfilerOBJ.DLL exist first
-            if (!File.Exists( getProfilerFullPath() ) )
+            if (!File.Exists(getProfilerFullPath()))
             {
                 ShowErrorMessage("Can not find '" + getProfilerFullPath() + "', please make sure ProfilerOBJ.dll exists at the same directory as CLRProfiler.exe.");
                 Environment.ExitCode = 1;
@@ -268,6 +300,7 @@ namespace CLRProfiler
             }
 
             #region arguments
+
             if (arguments.Length > 0)
             {
                 int pid;
@@ -285,11 +318,11 @@ namespace CLRProfiler
                             return;
                         }
 
-                        for (int index = 2; index + 1 < arguments.Length; index = index+2)
-                        { 
+                        for (int index = 2; index + 1 < arguments.Length; index = index + 2)
+                        {
                             if (arguments[index] == "-o" || arguments[index] == "/o")
                             {
-                                string fullPath = Path.GetFullPath(arguments[index+1]);
+                                string fullPath = Path.GetFullPath(arguments[index + 1]);
                                 logDirectory = Path.GetDirectoryName(fullPath);
                                 nameToUse = Path.GetFileName(fullPath);
                             }
@@ -305,7 +338,7 @@ namespace CLRProfiler
                             }
                         }
 
-                        if(logDirectory == null)
+                        if (logDirectory == null)
                         {
                             logDirectory = Directory.GetCurrentDirectory();
                         }
@@ -314,7 +347,7 @@ namespace CLRProfiler
                         CreatePipe(@"\\.\pipe\OMV_LOGGING_PIPE", false, ref loggingPipeHandle, ref loggingPipe);
                         instance = this;
 
-                        if (attachProfiler(pid, GetLogFullPath(pid)) )
+                        if (attachProfiler(pid, GetLogFullPath(pid)))
                         {
                             Console.WriteLine("The logging data is saved at " + GetLogFullPath(pid) + ".");
                         }
@@ -397,8 +430,11 @@ namespace CLRProfiler
                         return;
                 }
             }
+
             #endregion arguments
+
             #region arguments2
+
             for (i = 0; i < arguments.Length && !onlyCreateLog; i++)
             {
                 switch (arguments[i])
@@ -587,8 +623,11 @@ namespace CLRProfiler
                         break;
                 }
             }
+
             #endregion arguments2
+
             #region AllocationGraph
+
             if (graphtype == Graph.GraphType.AllocationGraph)
             {
                 if (File.Exists(prevlogFileName) && File.Exists(currlogFileName))
@@ -610,8 +649,11 @@ namespace CLRProfiler
                     CommandLineError(s);
                 }
             }
+
             #endregion AllocationGraph
+
             #region NoReport
+
             else if (reportKind != ReportKind.NoReport)
             {
                 if (logFileName == "")
@@ -660,6 +702,7 @@ namespace CLRProfiler
                     }
                 }
             }
+
             #endregion NoReport
             else
             {
@@ -744,6 +787,219 @@ namespace CLRProfiler
             }
         }
 
+        private enum CLRSKU
+        {
+            V4DesktopCLR,
+            V4CoreCLR,
+            V2DesktopCLR,
+        };
+
+        private enum ReportKind
+        {
+            NoReport,
+            AllocationReport,
+            RelocationReport,
+            SurvivorReport,
+            SurvivorDifferenceReport,
+            HeapDumpReport,
+            LeakReport,
+            FinalizerReport,
+            CriticalFinalizerReport,
+            CommentReport,
+        };
+
+        [DllImport("ieframe.dll", SetLastError = true)]
+        public static extern int IELaunchURL(
+            [MarshalAs(UnmanagedType.LPWStr)] string url,
+            ref PROCESS_INFORMATION pProcInfo,
+            ref IELAUNCHURLINFO lpInfo);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern void CloseHandle(
+            IntPtr handle
+        );
+
+        internal bool IsProfilingWindowsStoreApp()
+        {
+            return (windowsStoreAppProfileeInfo != null);
+        }
+
+        internal void CommandLineError(string message)
+        {
+            if (!noUI)
+            {
+                MessageBox.Show(message, "Report Profiler");
+                ShowUsage();
+            }
+            else
+            {
+                Console.WriteLine(message);
+            }
+        }
+
+        internal void CommandLineError(string message, params object[] args)
+        {
+            CommandLineError(string.Format(message, args));
+        }
+
+        internal string FetchArgument(string[] arguments, ref int i)
+        {
+            i++;
+            if (arguments.Length > i)
+                return arguments[i];
+            else
+            {
+                CommandLineError("Option {0} expects an argument", arguments[i - 1]);
+                return "";
+            }
+        }
+
+        /// <summary>
+        /// Clean up any resources being used.
+        /// </summary>
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                if (components != null)
+                    components.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
+        /// <summary>
+        /// The main entry point for the application.
+        /// </summary>
+        [STAThread]
+        private static void Main(string[] arguments)
+        {
+            consoleCtrl = new ConsoleCtrl();
+            consoleCtrl.ControlEvent += new ConsoleCtrl.ControlEventHandler(ConsoleEventHandler);
+            MainForm f = new MainForm(arguments);
+
+            if (f.exitProgram)
+                return;
+
+            if (!f.viewdiff && f.reportKind == MainForm.ReportKind.NoReport && f.processFileName == null)
+            {
+                Application.Run(f);
+            }
+            else
+            {
+                try
+                {
+                    ReportForm _MgrForm = new ReportForm(f);
+                    if (!f.noUI)
+                    {
+                        Application.Run(_MgrForm);
+                    }
+                }
+                catch
+                {
+                    Application.Exit();
+                }
+            }
+        }
+
+        private static bool ConsoleEventHandler(ConsoleCtrl.ConsoleEvent consoleEvent)
+        {
+            MainForm instance = MainForm.instance;
+            if (instance == null || (instance.CheckProcessTerminate() && instance.CheckFileSave()))
+                Application.Exit();
+            return true;
+        }
+
+        private static unsafe int wcslen(char* s)
+        {
+            char* e;
+            for (e = s; *e != '\0'; e++)
+                ;
+            return (int)(e - s);
+        }
+
+        [DllImport("Kernel32.dll", CharSet = CharSet.Auto)]
+        private static extern SafeFileHandle CreateNamedPipe(
+            string lpName,         // pointer to pipe name
+            uint dwOpenMode,       // pipe open mode
+            uint dwPipeMode,       // pipe-specific modes
+            uint nMaxInstances,    // maximum number of instances
+            uint nOutBufferSize,   // output buffer size, in bytes
+            uint nInBufferSize,    // input buffer size, in bytes
+            uint nDefaultTimeOut,  // time-out time, in milliseconds
+            ref SECURITY_ATTRIBUTES lpSecurityAttributes  // pointer to security attributes
+            );
+
+        [DllImport("Kernel32.dll")]
+        private static extern IntPtr OpenProcess(
+            uint dwDesiredAccess,  // access flag
+            bool bInheritHandle,    // handle inheritance option
+            int dwProcessId       // process identifier
+            );
+
+        [DllImport("Advapi32.dll")]
+        private static extern bool OpenProcessToken(
+            IntPtr ProcessHandle,
+            uint DesiredAccess,
+            ref IntPtr TokenHandle
+            );
+
+        [DllImport("UserEnv.dll")]
+        private static extern bool CreateEnvironmentBlock(
+                out IntPtr lpEnvironment,
+                IntPtr hToken,
+                bool bInherit);
+
+        [DllImport("UserEnv.dll")]
+        private static extern bool DestroyEnvironmentBlock(
+                IntPtr lpEnvironment);
+
+        [DllImport("Advapi32.dll")]
+        private static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(
+            string StringSecurityDescriptor,
+            uint StringSDRevision,
+            out IntPtr SecurityDescriptor,
+            IntPtr SecurityDescriptorSize
+            );
+
+        [DllImport("Kernel32.dll")]
+        private static extern bool LocalFree(IntPtr ptr);
+
+        [DllImport("Advapi32.dll")]
+        private static extern bool ConvertSidToStringSidW(byte[] sid, out IntPtr stringSid);
+
+        [DllImport("Advapi32.dll")]
+        private static extern bool LookupAccountName(string machineName, string accountName, byte[] sid,
+                                 ref int sidLen, StringBuilder domainName, ref int domainNameLen, out int peUse);
+
+        [DllImport("Kernel32.dll")]
+        private static extern bool ConnectNamedPipe(
+            SafeFileHandle hNamedPipe,  // handle to named pipe to connect
+            IntPtr lpOverlapped         // pointer to overlapped structure
+            );
+
+        [DllImport("Kernel32.dll")]
+        private static extern bool DisconnectNamedPipe(
+            SafeFileHandle hNamedPipe   // handle to named pipe
+            );
+
+        [DllImport("Kernel32.dll")]
+        private static extern int GetLastError();
+
+        [DllImport("Kernel32.dll")]
+        private static extern bool ReadFile(
+            IntPtr hFile,                // handle of file to read
+            byte[] lpBuffer,             // pointer to buffer that receives data
+            uint nNumberOfBytesToRead,  // number of bytes to read
+            out uint lpNumberOfBytesRead, // pointer to number of bytes read
+            IntPtr lpOverlapped    // pointer to structure for data
+            );
+
+        [DllImport("Kernel32.dll")]
+        private static extern int IsWow64Process(IntPtr process, out int wow64Process);
+
+        [DllImport("profilerOBJ.dll", CharSet = CharSet.Unicode)]
+        private static extern uint AttachProfiler(int pid, string targetVersion, string profilerPath, [In] ref ProfConfig profConfig, bool fConsoleMode);
+
         private void ShowUsage()
         {
             graphtype = Graph.GraphType.Invalid;
@@ -751,7 +1007,7 @@ namespace CLRProfiler
             s += String.Format("Usage: {0} -attach PID [-o logName] [-t timeoutInMiliseconds]\r\n", Path.GetFileName(Application.ExecutablePath));
             s += "  -attach PID      \t- attaches to the target process\r\n";
             s += "  -o logName       \t- file to write the resulting profile log to\r\n";
-            s += "  -t timeout       \t- max time in miliseconds to wait for the attach to succeed\r\n"; 
+            s += "  -t timeout       \t- max time in miliseconds to wait for the attach to succeed\r\n";
             s += "or\r\n";
             s += String.Format("{0} -detach PID\r\n", Path.GetFileName(Application.ExecutablePath));
             s += "  -detach PID      \t- detaches from the target process (use -attach first)\r\n";
@@ -858,603 +1114,6 @@ namespace CLRProfiler
             {
                 return Process.GetProcessById(profiledProcess.Id) == null;
             }
-
-        }
-
-        /// <summary>
-        /// Clean up any resources being used.
-        /// </summary>
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                if (components != null)
-                    components.Dispose();
-            }
-            base.Dispose(disposing);
-        }
-
-        #region Windows Form Designer generated code
-        /// <summary>
-        /// Required method for Designer support - do not modify
-        /// the contents of this method with the code editor.
-        /// </summary>
-        private void InitializeComponent()
-        {
-            this.components = new System.ComponentModel.Container();
-            this.profilingActiveCheckBox = new System.Windows.Forms.CheckBox();
-            this.openFileDialog = new System.Windows.Forms.OpenFileDialog();
-            this.groupBox1 = new System.Windows.Forms.GroupBox();
-            this.callsCheckBox = new System.Windows.Forms.CheckBox();
-            this.allocationsCheckBox = new System.Windows.Forms.CheckBox();
-            this.logFileOpenMenuItem = new System.Windows.Forms.MenuItem();
-            this.setCommandLineMenuItem = new System.Windows.Forms.MenuItem();
-            this.profileApplicationMenuItem = new System.Windows.Forms.MenuItem();
-            this.profileASP_NETmenuItem = new System.Windows.Forms.MenuItem();
-            this.killApplicationButton = new System.Windows.Forms.Button();
-            this.startApplicationButton = new System.Windows.Forms.Button();
-            this.checkProcessTimer = new System.Windows.Forms.Timer(this.components);
-            this.fontMenuItem = new System.Windows.Forms.MenuItem();
-            this.label1 = new System.Windows.Forms.Label();
-            this.mainMenu = new System.Windows.Forms.MainMenu(this.components);
-            this.menuItem1 = new System.Windows.Forms.MenuItem();
-            this.menuStartWindowsStoreApp = new System.Windows.Forms.MenuItem();
-            this.startURLMenuItem = new System.Windows.Forms.MenuItem();
-            this.attachProcessMenuItem = new System.Windows.Forms.MenuItem();
-            this.detachProcessMenuItem = new System.Windows.Forms.MenuItem();
-            this.profileServiceMenuItem = new System.Windows.Forms.MenuItem();
-            this.saveAsMenuItem = new System.Windows.Forms.MenuItem();
-            this.menuItem3 = new System.Windows.Forms.MenuItem();
-            this.exitMenuItem = new System.Windows.Forms.MenuItem();
-            this.menuItem5 = new System.Windows.Forms.MenuItem();
-            this.menuItem8 = new System.Windows.Forms.MenuItem();
-            this.viewSummaryMenuItem = new System.Windows.Forms.MenuItem();
-            this.viewHistogramAllocatedMenuItem = new System.Windows.Forms.MenuItem();
-            this.viewHistogramRelocatedMenuItem = new System.Windows.Forms.MenuItem();
-            this.viewHistogramFinalizerMenuItem = new System.Windows.Forms.MenuItem();
-            this.viewHistogramCriticalFinalizerMenuItem = new System.Windows.Forms.MenuItem();
-            this.viewObjectsByAddressMenuItem = new System.Windows.Forms.MenuItem();
-            this.viewHistogramByAgeMenuItem = new System.Windows.Forms.MenuItem();
-            this.viewAllocationGraphMenuItem = new System.Windows.Forms.MenuItem();
-            this.viewAssemblyGraphMenuItem = new System.Windows.Forms.MenuItem();
-            this.viewFunctionGraphMenuItem = new System.Windows.Forms.MenuItem();
-            this.viewModuleGraphMenuItem = new System.Windows.Forms.MenuItem();
-            this.viewClassGraphMenuItem = new System.Windows.Forms.MenuItem();
-            this.viewHeapGraphMenuItem = new System.Windows.Forms.MenuItem();
-            this.viewCallGraphMenuItem = new System.Windows.Forms.MenuItem();
-            this.viewTimeLineMenuItem = new System.Windows.Forms.MenuItem();
-            this.viewCommentsMenuItem = new System.Windows.Forms.MenuItem();
-            this.viewCallTreeMenuItem = new System.Windows.Forms.MenuItem();
-            this.menuItem2 = new System.Windows.Forms.MenuItem();
-            this.viewComparisonMenuItem = new System.Windows.Forms.MenuItem();
-            this.showHeapButton = new System.Windows.Forms.Button();
-            this.fontDialog = new System.Windows.Forms.FontDialog();
-            this.saveFileDialog = new System.Windows.Forms.SaveFileDialog();
-            this.attachProcessButton = new System.Windows.Forms.Button();
-            this.groupBox2 = new System.Windows.Forms.GroupBox();
-            this.targetCLRVersioncomboBox = new System.Windows.Forms.ComboBox();
-            this.label2 = new System.Windows.Forms.Label();
-            this.detachProcessButton = new System.Windows.Forms.Button();
-            this.startURLButton = new System.Windows.Forms.Button();
-            this.startWindowsStoreAppButton = new System.Windows.Forms.Button();
-            this.groupBox1.SuspendLayout();
-            this.groupBox2.SuspendLayout();
-            this.SuspendLayout();
-            // 
-            // profilingActiveCheckBox
-            // 
-            this.profilingActiveCheckBox.Checked = true;
-            this.profilingActiveCheckBox.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.profilingActiveCheckBox.Location = new System.Drawing.Point(198, 15);
-            this.profilingActiveCheckBox.Name = "profilingActiveCheckBox";
-            this.profilingActiveCheckBox.Size = new System.Drawing.Size(123, 24);
-            this.profilingActiveCheckBox.TabIndex = 7;
-            this.profilingActiveCheckBox.Text = "Profiling active";
-            this.profilingActiveCheckBox.CheckedChanged += new System.EventHandler(this.profilingActiveCheckBox_CheckedChanged);
-            // 
-            // groupBox1
-            // 
-            this.groupBox1.Controls.Add(this.callsCheckBox);
-            this.groupBox1.Controls.Add(this.allocationsCheckBox);
-            this.groupBox1.Location = new System.Drawing.Point(193, 66);
-            this.groupBox1.Name = "groupBox1";
-            this.groupBox1.Size = new System.Drawing.Size(133, 57);
-            this.groupBox1.TabIndex = 7;
-            this.groupBox1.TabStop = false;
-            // 
-            // callsCheckBox
-            // 
-            this.callsCheckBox.Location = new System.Drawing.Point(16, 32);
-            this.callsCheckBox.Name = "callsCheckBox";
-            this.callsCheckBox.Size = new System.Drawing.Size(94, 18);
-            this.callsCheckBox.TabIndex = 9;
-            this.callsCheckBox.Text = "Calls";
-            this.callsCheckBox.CheckedChanged += new System.EventHandler(this.callsCheckBox_CheckedChanged);
-            // 
-            // allocationsCheckBox
-            // 
-            this.allocationsCheckBox.Location = new System.Drawing.Point(16, 15);
-            this.allocationsCheckBox.Name = "allocationsCheckBox";
-            this.allocationsCheckBox.Size = new System.Drawing.Size(90, 20);
-            this.allocationsCheckBox.TabIndex = 8;
-            this.allocationsCheckBox.Text = "Allocations";
-            this.allocationsCheckBox.CheckedChanged += new System.EventHandler(this.allocationsCheckBox_CheckedChanged);
-            // 
-            // logFileOpenMenuItem
-            // 
-            this.logFileOpenMenuItem.Index = 0;
-            this.logFileOpenMenuItem.Shortcut = System.Windows.Forms.Shortcut.CtrlO;
-            this.logFileOpenMenuItem.Text = "Open Log File...";
-            this.logFileOpenMenuItem.Click += new System.EventHandler(this.fileOpenMenuItem_Click);
-            // 
-            // setCommandLineMenuItem
-            // 
-            this.setCommandLineMenuItem.Index = 9;
-            this.setCommandLineMenuItem.Text = "Set Parameters...";
-            this.setCommandLineMenuItem.Click += new System.EventHandler(this.setCommandLineMenuItem_Click);
-            // 
-            // profileApplicationMenuItem
-            // 
-            this.profileApplicationMenuItem.Index = 1;
-            this.profileApplicationMenuItem.Text = "Profile Application...";
-            this.profileApplicationMenuItem.Click += new System.EventHandler(this.profileApplicationMenuItem_Click);
-            // 
-            // profileASP_NETmenuItem
-            // 
-            this.profileASP_NETmenuItem.Index = 6;
-            this.profileASP_NETmenuItem.Text = "Profile ASP.NET";
-            this.profileASP_NETmenuItem.Click += new System.EventHandler(this.profileASP_NETmenuItem_Click);
-            // 
-            // killApplicationButton
-            // 
-            this.killApplicationButton.Location = new System.Drawing.Point(15, 147);
-            this.killApplicationButton.Name = "killApplicationButton";
-            this.killApplicationButton.Size = new System.Drawing.Size(164, 24);
-            this.killApplicationButton.TabIndex = 5;
-            this.killApplicationButton.Text = "Kill Application";
-            this.killApplicationButton.Click += new System.EventHandler(this.killApplicationButton_Click);
-            // 
-            // startApplicationButton
-            // 
-            this.startApplicationButton.Location = new System.Drawing.Point(15, 12);
-            this.startApplicationButton.Name = "startApplicationButton";
-            this.startApplicationButton.Size = new System.Drawing.Size(164, 24);
-            this.startApplicationButton.TabIndex = 1;
-            this.startApplicationButton.Text = "Start Desktop App...";
-            this.startApplicationButton.Click += new System.EventHandler(this.startApplicationButton_Click);
-            // 
-            // checkProcessTimer
-            // 
-            this.checkProcessTimer.Enabled = true;
-            this.checkProcessTimer.Tick += new System.EventHandler(this.checkProcessTimer_Tick);
-            // 
-            // fontMenuItem
-            // 
-            this.fontMenuItem.Index = 0;
-            this.fontMenuItem.Text = "Font...";
-            this.fontMenuItem.Click += new System.EventHandler(this.fontMenuItem_Click);
-            // 
-            // label1
-            // 
-            this.label1.Location = new System.Drawing.Point(201, 66);
-            this.label1.Name = "label1";
-            this.label1.Size = new System.Drawing.Size(40, 16);
-            this.label1.TabIndex = 6;
-            this.label1.Text = "Profile:";
-            // 
-            // mainMenu
-            // 
-            this.mainMenu.MenuItems.AddRange(new System.Windows.Forms.MenuItem[] {
-            this.menuItem1,
-            this.menuItem5,
-            this.menuItem8});
-            // 
-            // menuItem1
-            // 
-            this.menuItem1.Index = 0;
-            this.menuItem1.MenuItems.AddRange(new System.Windows.Forms.MenuItem[] {
-            this.logFileOpenMenuItem,
-            this.profileApplicationMenuItem,
-            this.menuStartWindowsStoreApp,
-            this.startURLMenuItem,
-            this.attachProcessMenuItem,
-            this.detachProcessMenuItem,
-            this.profileASP_NETmenuItem,
-            this.profileServiceMenuItem,
-            this.saveAsMenuItem,
-            this.setCommandLineMenuItem,
-            this.menuItem3,
-            this.exitMenuItem});
-            this.menuItem1.Text = "File";
-            // 
-            // menuStartWindowsStoreApp
-            // 
-            this.menuStartWindowsStoreApp.Index = 2;
-            this.menuStartWindowsStoreApp.Text = "Profile Windows Store Application...";
-            this.menuStartWindowsStoreApp.Click += new System.EventHandler(this.menuStartWindowsStoreApp_Click);
-            // 
-            // startURLMenuItem
-            // 
-            this.startURLMenuItem.Index = 3;
-            this.startURLMenuItem.Text = "Start URL...";
-            this.startURLMenuItem.Click += new System.EventHandler(this.startURLMenuItem_Click);
-            // 
-            // attachProcessMenuItem
-            // 
-            this.attachProcessMenuItem.Index = 4;
-            this.attachProcessMenuItem.Text = "Attach Process...";
-            this.attachProcessMenuItem.Click += new System.EventHandler(this.attachProcessMenuItem_Click);
-            // 
-            // detachProcessMenuItem
-            // 
-            this.detachProcessMenuItem.Enabled = false;
-            this.detachProcessMenuItem.Index = 5;
-            this.detachProcessMenuItem.Text = "Detach Process";
-            this.detachProcessMenuItem.Click += new System.EventHandler(this.detachProcessMenuItem_Click);
-            // 
-            // profileServiceMenuItem
-            // 
-            this.profileServiceMenuItem.Index = 7;
-            this.profileServiceMenuItem.Text = "Profile Service...";
-            this.profileServiceMenuItem.Click += new System.EventHandler(this.profileServiceMenuItem_Click);
-            // 
-            // saveAsMenuItem
-            // 
-            this.saveAsMenuItem.Enabled = false;
-            this.saveAsMenuItem.Index = 8;
-            this.saveAsMenuItem.Shortcut = System.Windows.Forms.Shortcut.CtrlS;
-            this.saveAsMenuItem.Text = "Save Profile As...";
-            this.saveAsMenuItem.Click += new System.EventHandler(this.saveAsMenuItem_Click);
-            // 
-            // menuItem3
-            // 
-            this.menuItem3.Index = 10;
-            this.menuItem3.Text = "-";
-            // 
-            // exitMenuItem
-            // 
-            this.exitMenuItem.Index = 11;
-            this.exitMenuItem.Text = "Exit";
-            this.exitMenuItem.Click += new System.EventHandler(this.exitMenuItem_Click);
-            // 
-            // menuItem5
-            // 
-            this.menuItem5.Index = 1;
-            this.menuItem5.MenuItems.AddRange(new System.Windows.Forms.MenuItem[] {
-            this.fontMenuItem});
-            this.menuItem5.Text = "Edit";
-            // 
-            // menuItem8
-            // 
-            this.menuItem8.Index = 2;
-            this.menuItem8.MenuItems.AddRange(new System.Windows.Forms.MenuItem[] {
-            this.viewSummaryMenuItem,
-            this.viewHistogramAllocatedMenuItem,
-            this.viewHistogramRelocatedMenuItem,
-            this.viewHistogramFinalizerMenuItem,
-            this.viewHistogramCriticalFinalizerMenuItem,
-            this.viewObjectsByAddressMenuItem,
-            this.viewHistogramByAgeMenuItem,
-            this.viewAllocationGraphMenuItem,
-            this.viewAssemblyGraphMenuItem,
-            this.viewFunctionGraphMenuItem,
-            this.viewModuleGraphMenuItem,
-            this.viewClassGraphMenuItem,
-            this.viewHeapGraphMenuItem,
-            this.viewCallGraphMenuItem,
-            this.viewTimeLineMenuItem,
-            this.viewCommentsMenuItem,
-            this.viewCallTreeMenuItem,
-            this.menuItem2,
-            this.viewComparisonMenuItem});
-            this.menuItem8.Text = "View";
-            // 
-            // viewSummaryMenuItem
-            // 
-            this.viewSummaryMenuItem.Index = 0;
-            this.viewSummaryMenuItem.Text = "Summary";
-            this.viewSummaryMenuItem.Click += new System.EventHandler(this.viewSummaryMenuItem_Click);
-            // 
-            // viewHistogramAllocatedMenuItem
-            // 
-            this.viewHistogramAllocatedMenuItem.Index = 1;
-            this.viewHistogramAllocatedMenuItem.Text = "Histogram Allocated Types";
-            this.viewHistogramAllocatedMenuItem.Click += new System.EventHandler(this.viewHistogram_Click);
-            // 
-            // viewHistogramRelocatedMenuItem
-            // 
-            this.viewHistogramRelocatedMenuItem.Index = 2;
-            this.viewHistogramRelocatedMenuItem.Text = "Histogram Relocated Types";
-            this.viewHistogramRelocatedMenuItem.Click += new System.EventHandler(this.viewHistogramRelocatedMenuItem_Click);
-            // 
-            // viewHistogramFinalizerMenuItem
-            // 
-            this.viewHistogramFinalizerMenuItem.Index = 3;
-            this.viewHistogramFinalizerMenuItem.Text = "Histogram Finalized Types";
-            this.viewHistogramFinalizerMenuItem.Click += new System.EventHandler(this.viewHistogramFinalizerMenuItem_Click);
-            // 
-            // viewHistogramCriticalFinalizerMenuItem
-            // 
-            this.viewHistogramCriticalFinalizerMenuItem.Index = 4;
-            this.viewHistogramCriticalFinalizerMenuItem.Text = "Histogram Critical Finalized Types";
-            this.viewHistogramCriticalFinalizerMenuItem.Click += new System.EventHandler(this.viewHistogramCriticalFinalizerMenuItem_Click);
-            // 
-            // viewObjectsByAddressMenuItem
-            // 
-            this.viewObjectsByAddressMenuItem.Index = 5;
-            this.viewObjectsByAddressMenuItem.Text = "Objects by Address";
-            this.viewObjectsByAddressMenuItem.Click += new System.EventHandler(this.viewByAddressMenuItem_Click);
-            // 
-            // viewHistogramByAgeMenuItem
-            // 
-            this.viewHistogramByAgeMenuItem.Index = 6;
-            this.viewHistogramByAgeMenuItem.Text = "Histogram by Age";
-            this.viewHistogramByAgeMenuItem.Click += new System.EventHandler(this.viewAgeHistogram_Click);
-            // 
-            // viewAllocationGraphMenuItem
-            // 
-            this.viewAllocationGraphMenuItem.Index = 7;
-            this.viewAllocationGraphMenuItem.Text = "Allocation Graph";
-            this.viewAllocationGraphMenuItem.Click += new System.EventHandler(this.viewAllocationGraphmenuItem_Click);
-            // 
-            // viewAssemblyGraphMenuItem
-            // 
-            this.viewAssemblyGraphMenuItem.Index = 8;
-            this.viewAssemblyGraphMenuItem.Text = "Assembly Graph";
-            this.viewAssemblyGraphMenuItem.Click += new System.EventHandler(this.viewAssemblyGraphmenuItem_Click);
-            // 
-            // viewFunctionGraphMenuItem
-            // 
-            this.viewFunctionGraphMenuItem.Index = 9;
-            this.viewFunctionGraphMenuItem.Text = "Function Graph";
-            this.viewFunctionGraphMenuItem.Click += new System.EventHandler(this.viewFunctionGraphMenuItem_Click);
-            // 
-            // viewModuleGraphMenuItem
-            // 
-            this.viewModuleGraphMenuItem.Index = 10;
-            this.viewModuleGraphMenuItem.Text = "Module Graph";
-            this.viewModuleGraphMenuItem.Click += new System.EventHandler(this.viewModuleGraphMenuItem_Click);
-            // 
-            // viewClassGraphMenuItem
-            // 
-            this.viewClassGraphMenuItem.Index = 11;
-            this.viewClassGraphMenuItem.Text = "Class Graph";
-            this.viewClassGraphMenuItem.Click += new System.EventHandler(this.viewClassGraphMenuItem_Click);
-            // 
-            // viewHeapGraphMenuItem
-            // 
-            this.viewHeapGraphMenuItem.Index = 12;
-            this.viewHeapGraphMenuItem.Text = "Heap Graph";
-            this.viewHeapGraphMenuItem.Click += new System.EventHandler(this.viewHeapGraphMenuItem_Click);
-            // 
-            // viewCallGraphMenuItem
-            // 
-            this.viewCallGraphMenuItem.Index = 13;
-            this.viewCallGraphMenuItem.Text = "Call Graph";
-            this.viewCallGraphMenuItem.Click += new System.EventHandler(this.viewCallGraphMenuItem_Click);
-            // 
-            // viewTimeLineMenuItem
-            // 
-            this.viewTimeLineMenuItem.Index = 14;
-            this.viewTimeLineMenuItem.Text = "Time Line";
-            this.viewTimeLineMenuItem.Click += new System.EventHandler(this.viewTimeLineMenuItem_Click);
-            // 
-            // viewCommentsMenuItem
-            // 
-            this.viewCommentsMenuItem.Index = 15;
-            this.viewCommentsMenuItem.Text = "Comments";
-            this.viewCommentsMenuItem.Click += new System.EventHandler(this.viewCommentsMenuItem_Click);
-            // 
-            // viewCallTreeMenuItem
-            // 
-            this.viewCallTreeMenuItem.Index = 16;
-            this.viewCallTreeMenuItem.Text = "Call Tree";
-            this.viewCallTreeMenuItem.Click += new System.EventHandler(this.viewCallTreeMenuItem_Click);
-            // 
-            // menuItem2
-            // 
-            this.menuItem2.Index = 17;
-            this.menuItem2.Text = "-----------------------------";
-            // 
-            // viewComparisonMenuItem
-            // 
-            this.viewComparisonMenuItem.Index = 18;
-            this.viewComparisonMenuItem.Text = "Comparison with ...";
-            this.viewComparisonMenuItem.Click += new System.EventHandler(this.viewComparisonMenuItem_Click);
-            // 
-            // showHeapButton
-            // 
-            this.showHeapButton.Location = new System.Drawing.Point(15, 174);
-            this.showHeapButton.Name = "showHeapButton";
-            this.showHeapButton.Size = new System.Drawing.Size(164, 24);
-            this.showHeapButton.TabIndex = 6;
-            this.showHeapButton.Text = "Show Heap now";
-            this.showHeapButton.Click += new System.EventHandler(this.showHeapButton_Click);
-            // 
-            // fontDialog
-            // 
-            this.fontDialog.Color = System.Drawing.SystemColors.ControlText;
-            // 
-            // saveFileDialog
-            // 
-            this.saveFileDialog.FileName = "doc1";
-            // 
-            // attachProcessButton
-            // 
-            this.attachProcessButton.Location = new System.Drawing.Point(15, 93);
-            this.attachProcessButton.Name = "attachProcessButton";
-            this.attachProcessButton.Size = new System.Drawing.Size(164, 24);
-            this.attachProcessButton.TabIndex = 3;
-            this.attachProcessButton.Text = "Attach Process...";
-            this.attachProcessButton.UseVisualStyleBackColor = true;
-            this.attachProcessButton.Click += new System.EventHandler(this.attachProcessButton_Click);
-            // 
-            // groupBox2
-            // 
-            this.groupBox2.Controls.Add(this.targetCLRVersioncomboBox);
-            this.groupBox2.Controls.Add(this.label2);
-            this.groupBox2.Location = new System.Drawing.Point(194, 144);
-            this.groupBox2.Name = "groupBox2";
-            this.groupBox2.Size = new System.Drawing.Size(132, 54);
-            this.groupBox2.TabIndex = 11;
-            this.groupBox2.TabStop = false;
-            // 
-            // targetCLRVersioncomboBox
-            // 
-            this.targetCLRVersioncomboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
-            this.targetCLRVersioncomboBox.FormattingEnabled = true;
-            this.targetCLRVersioncomboBox.Items.AddRange(new object[] {
-            "V4 Desktop CLR",
-            "V4 Core CLR",
-            "V2 Desktop CLR"});
-            this.targetCLRVersioncomboBox.Location = new System.Drawing.Point(7, 22);
-            this.targetCLRVersioncomboBox.Name = "targetCLRVersioncomboBox";
-            this.targetCLRVersioncomboBox.Size = new System.Drawing.Size(114, 21);
-            this.targetCLRVersioncomboBox.TabIndex = 10;
-            this.targetCLRVersioncomboBox.SelectedIndexChanged += new System.EventHandler(this.targetCLRVersioncomboBox_SelectedIndexChanged);
-            // 
-            // label2
-            // 
-            this.label2.Location = new System.Drawing.Point(6, 0);
-            this.label2.Name = "label2";
-            this.label2.Size = new System.Drawing.Size(120, 19);
-            this.label2.TabIndex = 12;
-            this.label2.Text = "Target CLR Version:";
-            // 
-            // detachProcessButton
-            // 
-            this.detachProcessButton.Enabled = false;
-            this.detachProcessButton.Location = new System.Drawing.Point(15, 120);
-            this.detachProcessButton.Name = "detachProcessButton";
-            this.detachProcessButton.Size = new System.Drawing.Size(164, 24);
-            this.detachProcessButton.TabIndex = 4;
-            this.detachProcessButton.Text = "Detach Process";
-            this.detachProcessButton.UseVisualStyleBackColor = true;
-            this.detachProcessButton.Click += new System.EventHandler(this.detachProcessButton_Click);
-            // 
-            // startURLButton
-            // 
-            this.startURLButton.Location = new System.Drawing.Point(15, 66);
-            this.startURLButton.Name = "startURLButton";
-            this.startURLButton.Size = new System.Drawing.Size(164, 24);
-            this.startURLButton.TabIndex = 2;
-            this.startURLButton.Text = "Start URL...";
-            this.startURLButton.Click += new System.EventHandler(this.startURLButton_Click);
-            // 
-            // startWindowsStoreAppButton
-            // 
-            this.startWindowsStoreAppButton.Location = new System.Drawing.Point(15, 39);
-            this.startWindowsStoreAppButton.Name = "startWindowsStoreAppButton";
-            this.startWindowsStoreAppButton.Size = new System.Drawing.Size(164, 24);
-            this.startWindowsStoreAppButton.TabIndex = 12;
-            this.startWindowsStoreAppButton.Text = "Start Windows Store App...";
-            this.startWindowsStoreAppButton.Click += new System.EventHandler(this.startWindowsStoreAppButton_Click);
-            // 
-            // MainForm
-            // 
-            this.ClientSize = new System.Drawing.Size(341, 208);
-            this.Controls.Add(this.startWindowsStoreAppButton);
-            this.Controls.Add(this.startURLButton);
-            this.Controls.Add(this.detachProcessButton);
-            this.Controls.Add(this.groupBox2);
-            this.Controls.Add(this.attachProcessButton);
-            this.Controls.Add(this.showHeapButton);
-            this.Controls.Add(this.profilingActiveCheckBox);
-            this.Controls.Add(this.label1);
-            this.Controls.Add(this.groupBox1);
-            this.Controls.Add(this.killApplicationButton);
-            this.Controls.Add(this.startApplicationButton);
-            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
-            this.MaximizeBox = false;
-            this.Menu = this.mainMenu;
-            this.Name = "MainForm";
-            this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
-            this.Text = "CLR Profiler";
-            this.Closing += new System.ComponentModel.CancelEventHandler(this.Form1_Closing);
-            this.groupBox1.ResumeLayout(false);
-            this.groupBox2.ResumeLayout(false);
-            this.ResumeLayout(false);
-
-        }
-        #endregion
-
-        /// <summary>
-        /// The main entry point for the application.
-        /// </summary>
-        [STAThread]
-        static void Main(string[] arguments)
-        {
-            consoleCtrl = new ConsoleCtrl();
-            consoleCtrl.ControlEvent += new ConsoleCtrl.ControlEventHandler(ConsoleEventHandler);
-            MainForm f = new MainForm(arguments);
-
-            if (f.exitProgram)
-                return;
-
-            if (!f.viewdiff && f.reportKind == MainForm.ReportKind.NoReport && f.processFileName == null)
-            {
-                Application.Run(f);
-            }
-            else
-            {
-                try
-                {
-                    ReportForm _MgrForm = new ReportForm(f);
-                    if (!f.noUI)
-                    {
-                        Application.Run(_MgrForm);
-                    }
-                }
-                catch
-                {
-                    Application.Exit();
-                }
-            }
-        }
-
-        static ConsoleCtrl consoleCtrl;
-
-        static bool ConsoleEventHandler(ConsoleCtrl.ConsoleEvent consoleEvent)
-        {
-            MainForm instance = MainForm.instance;
-            if (instance == null || (instance.CheckProcessTerminate() && instance.CheckFileSave()))
-                Application.Exit();
-            return true;
-        }
-
-        class ConsoleCtrl
-        {
-            internal enum ConsoleEvent
-            {
-                CTRL_C = 0,           // From wincom.h
-                CTRL_BREAK = 1,
-                CTRL_CLOSE = 2,
-                CTRL_LOGOFF = 5,
-                CTRL_SHUTDOWN = 6
-            }
-
-            internal delegate bool ControlEventHandler(ConsoleEvent consoleEvent);
-
-            internal event ControlEventHandler ControlEvent;
-
-            ControlEventHandler eventHandler;
-
-            internal ConsoleCtrl()
-            {
-                // save this to a private var so the GC doesn't collect it...
-                eventHandler = new ControlEventHandler(Handler);
-                SetConsoleCtrlHandler(eventHandler, true);
-            }
-
-            private bool Handler(ConsoleEvent consoleEvent)
-            {
-                if (ControlEvent != null)
-                    return ControlEvent(consoleEvent);
-                return false;
-            }
-
-            [DllImport("kernel32.dll")]
-            static extern bool SetConsoleCtrlHandler(ControlEventHandler e, bool add);
         }
 
         private void ViewGraph(ReadLogResult logResult, string exeName, Graph.GraphType graphType)
@@ -1525,12 +1184,10 @@ namespace CLRProfiler
         private void EnableDisableLaunchControls(bool enable)
         {
             // Buttons
-            startApplicationButton.Enabled = 
-                startWindowsStoreAppButton.Enabled =
-                startURLButton.Enabled = 
-                attachProcessButton.Enabled = 
-                detachProcessButton.Enabled = 
-                targetCLRVersioncomboBox.Enabled = 
+            startApplicationButton.Enabled =
+                attachProcessButton.Enabled =
+                detachProcessButton.Enabled =
+                targetCLRVersioncomboBox.Enabled =
                 enable;
 
             // Menu items
@@ -1596,7 +1253,7 @@ namespace CLRProfiler
                                      CultureInfo.InvariantCulture   //An invariant culture is culture-insensitive.
                                      ))
             {
-                ShowErrorMessage(logFileName +" is not a valid CLRProfiler log file name.");
+                ShowErrorMessage(logFileName + " is not a valid CLRProfiler log file name.");
                 Environment.ExitCode = 1;
                 exitProgram = true;
                 return;
@@ -1866,14 +1523,6 @@ namespace CLRProfiler
             return process;
         }
 
-        private static unsafe int wcslen(char* s)
-        {
-            char* e;
-            for (e = s; *e != '\0'; e++)
-                ;
-            return (int)(e - s);
-        }
-
         [SuppressMessage("Microsoft.Security", "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands", Justification = "CLRProfiler.exe is a stand-alone tool, not a library.")]
         private string[] GetServicesEnvironment()
         {
@@ -1897,7 +1546,7 @@ namespace CLRProfiler
             unsafe
             {
                 string[] envStrings = null;
-                // rather than duplicate the code that walks over the environment, 
+                // rather than duplicate the code that walks over the environment,
                 // we have this funny loop where the first iteration just counts the strings,
                 // and the second iteration fills in the strings
                 for (int i = 0; i < 2; i++)
@@ -2030,7 +1679,7 @@ namespace CLRProfiler
         private string[] CreateProfilerEnvironment(string tempDir)
         {
             return new string[]
-            { 
+            {
                 "Cor_Enable_Profiling=0x1",
                 "COR_PROFILER={8C29BC4E-1F57-461a-9B51-1200C32E6F1F}",
                 "COR_PROFILER_PATH=" + getProfilerFullPath(),
@@ -2043,7 +1692,8 @@ namespace CLRProfiler
                 "OMV_FORCE_GC_ON_COMMENT=" + (gcOnLogFileComments ? "1" : "0"),
                 "OMV_INITIAL_SETTING=" + CreateInitialString(),
                 "OMV_TargetCLRVersion=" + (targetv2DesktopCLR() ? "v2" : "v4"),
-                "OMV_WindowsStoreApp=" + (IsProfilingWindowsStoreApp() ? "1" : "0")
+                "OMV_WindowsStoreApp=" + (IsProfilingWindowsStoreApp() ? "1" : "0"),
+                "SAMPLING_PERCENT=" + textBox1.Text
             };
         }
 
@@ -2241,7 +1891,7 @@ namespace CLRProfiler
 
                 Thread.Sleep(1000);
                 int pid = WaitForProcessToConnect(logDir, "Waiting for ASP.NET to start common language runtime - this is the time to load your test page");
-                if ( pid > 0)
+                if (pid > 0)
                 {
                     profiledProcess = Process.GetProcessById(pid);
 
@@ -2264,93 +1914,6 @@ namespace CLRProfiler
 
             serviceName = null;
         }
-
-        struct SECURITY_ATTRIBUTES
-        {
-            public uint nLength;
-            public IntPtr lpSecurityDescriptor;
-            public int bInheritHandle;
-        };
-
-        [DllImport("Kernel32.dll", CharSet = CharSet.Auto)]
-        private static extern SafeFileHandle CreateNamedPipe(
-            string lpName,         // pointer to pipe name
-            uint dwOpenMode,       // pipe open mode
-            uint dwPipeMode,       // pipe-specific modes
-            uint nMaxInstances,    // maximum number of instances
-            uint nOutBufferSize,   // output buffer size, in bytes
-            uint nInBufferSize,    // input buffer size, in bytes
-            uint nDefaultTimeOut,  // time-out time, in milliseconds
-            ref SECURITY_ATTRIBUTES lpSecurityAttributes  // pointer to security attributes
-            );
-
-        [DllImport("Kernel32.dll")]
-        private static extern IntPtr OpenProcess(
-            uint dwDesiredAccess,  // access flag
-            bool bInheritHandle,    // handle inheritance option
-            int dwProcessId       // process identifier
-            );
-
-        [DllImport("Advapi32.dll")]
-        private static extern bool OpenProcessToken(
-            IntPtr ProcessHandle,
-            uint DesiredAccess,
-            ref IntPtr TokenHandle
-            );
-
-        [DllImport("UserEnv.dll")]
-        private static extern bool CreateEnvironmentBlock(
-                out IntPtr lpEnvironment,
-                IntPtr hToken,
-                bool bInherit);
-
-        [DllImport("UserEnv.dll")]
-        private static extern bool DestroyEnvironmentBlock(
-                IntPtr lpEnvironment);
-
-        [DllImport("Advapi32.dll")]
-        private static extern bool ConvertStringSecurityDescriptorToSecurityDescriptor(
-            string StringSecurityDescriptor,
-            uint StringSDRevision,
-            out IntPtr SecurityDescriptor,
-            IntPtr SecurityDescriptorSize
-            );
-
-        [DllImport("Kernel32.dll")]
-        private static extern bool LocalFree(IntPtr ptr);
-
-        [DllImport("Advapi32.dll")]
-        private static extern bool ConvertSidToStringSidW(byte[] sid, out IntPtr stringSid);
-
-        [DllImport("Advapi32.dll")]
-        private static extern bool LookupAccountName(string machineName, string accountName, byte[] sid,
-                                 ref int sidLen, StringBuilder domainName, ref int domainNameLen, out int peUse);
-
-        [DllImport("Kernel32.dll")]
-        private static extern bool ConnectNamedPipe(
-            SafeFileHandle hNamedPipe,  // handle to named pipe to connect
-            IntPtr lpOverlapped         // pointer to overlapped structure
-            );
-
-        [DllImport("Kernel32.dll")]
-        private static extern bool DisconnectNamedPipe(
-            SafeFileHandle hNamedPipe   // handle to named pipe
-            );
-
-        [DllImport("Kernel32.dll")]
-        private static extern int GetLastError();
-
-        [DllImport("Kernel32.dll")]
-        private static extern bool ReadFile(
-            IntPtr hFile,                // handle of file to read
-            byte[] lpBuffer,             // pointer to buffer that receives data
-            uint nNumberOfBytesToRead,  // number of bytes to read
-            out uint lpNumberOfBytesRead, // pointer to number of bytes read
-            IntPtr lpOverlapped    // pointer to structure for data
-            );
-
-        [DllImport("Kernel32.dll")]
-        private static extern int IsWow64Process(IntPtr process, out int wow64Process);
 
         private bool CreatePipe(string pipeName, bool blockingPipe, ref SafeFileHandle pipeHandle, ref FileStream pipe)
         {
@@ -2389,7 +1952,7 @@ namespace CLRProfiler
                 Directory.CreateDirectory(logDirectory);
             }
         }
-        
+
         private NamedManualResetEvent CreateEvent(string baseName, int pid, bool createEventHandle)
         {
             string eventName = string.Format("{0}{1}_{2:x8}", IsProfilingWindowsStoreApp() ? windowsStoreAppProfileeInfo.windowsStoreAppEventPrefix : "Global\\", baseName, pid);
@@ -2514,12 +2077,12 @@ namespace CLRProfiler
 
         private int WaitForWindowsStoreAppProcessToConnect(uint pid, string text, bool attachMode = false, uint result = 0)
         {
-            if (!VerifyCorrectBitness(Process.GetProcessById((int) pid)))
+            if (!VerifyCorrectBitness(Process.GetProcessById((int)pid)))
                 return -1;
 
             WaitingForConnectionForm waitingForConnectionForm = null;
 
-            //Do not show the text in attachmode 
+            //Do not show the text in attachmode
             if (attachMode == false)
             {
                 if (noUI)
@@ -2572,14 +2135,14 @@ namespace CLRProfiler
                     showHeapButton.Enabled = false;
                 else
                     showHeapButton.Enabled = true;
-                
+
                 killApplicationButton.Enabled = true;
             }
             logFileStartOffset = 0;
             logFileEndOffset = long.MaxValue;
             profilerConnected = true;
 
-            return (int) pid;
+            return (int)pid;
         }
 
         private int WaitForProcessToConnect(string tempDir, string text, bool attachMode = false, uint result = 0)
@@ -2590,7 +2153,6 @@ namespace CLRProfiler
                 if (!VerifyCorrectBitness(profiledProcess))
                     return -1;
             }
-
 
             ConnectNamedPipe(handshakingPipeHandle, IntPtr.Zero);
             ConnectNamedPipe(loggingPipeHandle, IntPtr.Zero);
@@ -2606,7 +2168,7 @@ namespace CLRProfiler
             WaitingForConnectionForm waitingForConnectionForm = null;
             int beginTickCount = Environment.TickCount;
 
-            //Do not show the text in attachmode 
+            //Do not show the text in attachmode
             if (attachMode == false)
             {
                 if (noUI)
@@ -2622,16 +2184,16 @@ namespace CLRProfiler
                 }
             }
 
-
             // loop reading two pipes,
-            // until   
-            //  (1)successfully connected 
+            // until
+            //  (1)successfully connected
             //  (2)User canceled
             //  (3)attach failed
             //  (4)target process exited
             while (true)
             {
                 #region handshaking
+
                 //(1)succeeded
                 try
                 {
@@ -2640,7 +2202,7 @@ namespace CLRProfiler
                 catch (System.IO.IOException)
                 {
                 }
-                
+
                 //Read 9 bytes from handshaking pipe
                 //means the profielr was initialized successfully
                 if (handshakingReadBytes == 9)
@@ -2656,8 +2218,11 @@ namespace CLRProfiler
                         break;
                     }
                 }
+
                 #endregion handshaking
+
                 #region logging
+
                 //  (3)attach failed
                 //  (3.1) read logging message
                 //  (3.2) break if attach failed.
@@ -2715,6 +2280,7 @@ namespace CLRProfiler
                     pid = -1;
                     break;
                 }
+
                 #endregion logging
                 //  (4)target process exited
                 if ((fProfiledProcessInitialized && profiledProcess == null) || (profiledProcess != null && ProfiledProcessHasExited()))
@@ -2789,7 +2355,7 @@ namespace CLRProfiler
                     showHeapButton.Enabled = false;
                 else
                     showHeapButton.Enabled = true;
-                
+
                 killApplicationButton.Enabled = true;
                 detachProcessMenuItem.Enabled = false;
             }
@@ -2810,7 +2376,6 @@ namespace CLRProfiler
             if (!WindowsStoreAppHelperWrapper.IsWindowsStoreAppSupported())
             {
                 // Error message was already displayed by WindowsStoreAppHelperWrapper
-                startWindowsStoreAppButton.Enabled = false;
                 return;
             }
 
@@ -2825,7 +2390,7 @@ namespace CLRProfiler
                 return;
 
             // User picks the package
-            
+
             WindowsStoreAppChooserForm windowsStoreAppAppChooserForm = new WindowsStoreAppChooserForm();
             DialogResult result = windowsStoreAppAppChooserForm.ShowDialog();
             if (result == DialogResult.Cancel)
@@ -2853,12 +2418,11 @@ namespace CLRProfiler
             if ((int)pid == -1)
                 return;
 
-            profiledProcess = Process.GetProcessById((int) pid);
+            profiledProcess = Process.GetProcessById((int)pid);
 
             if (WaitForWindowsStoreAppProcessToConnect(pid, "Waiting for Windows Store application to start common language runtime") <= 0)
                 ClearProfiledProcessInfo();
         }
-
 
         [SuppressMessage("Microsoft.Security", "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands", Justification = "CLRProfiler.exe is a stand-alone tool, not a library.")]
         private void startApplicationButton_Click(object sender, System.EventArgs e)
@@ -2866,7 +2430,6 @@ namespace CLRProfiler
             if (!CheckProcessTerminate() || !CheckFileSave())
                 return;
 
-            
             if (processFileName == null)
             {
                 profileApplicationMenuItem_Click(null, null);
@@ -2917,6 +2480,7 @@ namespace CLRProfiler
                 processStartInfo.EnvironmentVariables["OMV_INITIAL_SETTING"] = CreateInitialString();
                 processStartInfo.EnvironmentVariables["OMV_TargetCLRVersion"] = targetv2DesktopCLR() ? "v2" : "v4";
 
+                processStartInfo.EnvironmentVariables["SAMPLING_PERCENT"] = textBox1.Text;
 
                 if (commandLine != null)
                     processStartInfo.Arguments = commandLine;
@@ -2964,7 +2528,7 @@ namespace CLRProfiler
 
         private void ToggleEvent(NamedManualResetEvent toggleEvent, NamedManualResetEvent toggleEventCompleted)
         {
-            if (profiledProcess != null && !ProfiledProcessHasExited() )
+            if (profiledProcess != null && !ProfiledProcessHasExited())
             {
                 if (toggleEvent != null)
                 {
@@ -3090,7 +2654,7 @@ namespace CLRProfiler
             else
                 showHeapButton.Enabled = processRunning && profilerConnected;
         }
-                
+
         [SuppressMessage("Microsoft.Security", "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands", Justification = "CLRProfiler.exe is a stand-alone tool, not a library.")]
         private void killApplicationButton_Click(object sender, System.EventArgs e)
         {
@@ -3370,38 +2934,6 @@ namespace CLRProfiler
             startURLButton_Click(null, null);
         }
 
-        [StructLayout(LayoutKind.Sequential)]
-        public struct PROCESS_INFORMATION
-        {
-            [SuppressMessage("Microsoft.Security","CA2111:PointersShouldNotBeVisible", Justification="CLRProfiler.exe is a stand-alone tool, not a library.")]
-            public IntPtr hProcess;
-
-            [SuppressMessage("Microsoft.Security","CA2111:PointersShouldNotBeVisible", Justification="CLRProfiler.exe is a stand-alone tool, not a library.")]
-            public IntPtr hThread;
-
-            public int dwProcessId;
-            public int dwThreadId;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        public struct IELAUNCHURLINFO
-        {
-            public int cbSize;
-            public int dwCreationFlags;
-            public int dwLaunchOptionFlags;
-        }
-
-        [DllImport("ieframe.dll", SetLastError = true)]
-        public static extern int IELaunchURL(
-            [MarshalAs(UnmanagedType.LPWStr)] string url,
-            ref PROCESS_INFORMATION pProcInfo,
-            ref IELAUNCHURLINFO lpInfo);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern void CloseHandle(
-            IntPtr handle
-        );
-
         [SuppressMessage("Microsoft.Security", "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands", Justification = "CLRProfiler.exe is a stand-alone tool, not a library.")]
         private void startURLButton_Click(object sender, EventArgs e)
         {
@@ -3461,6 +2993,8 @@ namespace CLRProfiler
                 Environment.SetEnvironmentVariable("OMV_INITIAL_SETTING", CreateInitialString());
                 Environment.SetEnvironmentVariable("OMV_TargetCLRVersion", targetv2DesktopCLR() ? "v2" : "v4");
 
+                Environment.SetEnvironmentVariable("SAMPLING_PERCENT", textBox1.Text);
+
                 PROCESS_INFORMATION pi = new PROCESS_INFORMATION();
                 IELAUNCHURLINFO IEli = new IELAUNCHURLINFO();
                 IEli.cbSize = Marshal.SizeOf(typeof(IELAUNCHURLINFO));
@@ -3505,6 +3039,8 @@ namespace CLRProfiler
                 Environment.SetEnvironmentVariable("OMV_FORCE_GC_ON_COMMENT", "");
                 Environment.SetEnvironmentVariable("OMV_INITIAL_SETTING", "");
                 Environment.SetEnvironmentVariable("OMV_TargetCLRVersion", "");
+
+                Environment.SetEnvironmentVariable("SAMPLING_PERCENT", "");
             }
         }
 
@@ -3546,7 +3082,6 @@ namespace CLRProfiler
         {
             detachProcessButton_Click(null, null);
         }
-
 
         private void detachProcessButton_Click(object sender, EventArgs e)
         {
@@ -3625,10 +3160,10 @@ namespace CLRProfiler
             }
             catch (Exception e)
             {
-                ShowErrorMessage( string.Format("The process ID ({0}) is not valid : {1}", arguments[1], e.Message) );
+                ShowErrorMessage(string.Format("The process ID ({0}) is not valid : {1}", arguments[1], e.Message));
                 pid = 0;
             }
-            
+
             return pid;
         }
 
@@ -3651,9 +3186,6 @@ namespace CLRProfiler
                 Console.WriteLine(message);
             }
         }
-
-        [DllImport("profilerOBJ.dll", CharSet=CharSet.Unicode)]
-        private static extern uint AttachProfiler(int pid, string targetVersion, string profilerPath, [In] ref ProfConfig profConfig, bool fConsoleMode);
 
         // Check if the specified pid is a WindowsStoreApp.  If so, initialize
         // a new windowsStoreAppProfileeInfo based on it.
@@ -3684,12 +3216,12 @@ namespace CLRProfiler
                     WindowsStoreAppHelperWrapper.EnableDebuggingForPackage(windowsStoreAppPackageFullName);
                 }
             }
-            else
-            {
-                startWindowsStoreAppButton.Enabled = false;
-            }
 
             return true;
+        }
+
+        private void menuItem1_Click(object sender, EventArgs e)
+        {
         }
 
         [SuppressMessage("Microsoft.Security", "CA2122:DoNotIndirectlyExposeMethodsWithLinkDemands", Justification = "CLRProfiler.exe is a stand-alone tool, not a library.")]
@@ -3703,7 +3235,6 @@ namespace CLRProfiler
 
             if (!InitWindowsStoreAppProfileeInfoIfNecessary(pid))
                 return false;
-
 
             // For WindowsStoreApps, there's no choice of where the log file can be, so
             // override any request
@@ -3751,6 +3282,588 @@ namespace CLRProfiler
         private void menuStartWindowsStoreApp_Click(object sender, EventArgs e)
         {
             startWindowsStoreAppButton_Click(sender, e);
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct PROCESS_INFORMATION
+        {
+            [SuppressMessage("Microsoft.Security", "CA2111:PointersShouldNotBeVisible", Justification = "CLRProfiler.exe is a stand-alone tool, not a library.")]
+            public IntPtr hProcess;
+
+            [SuppressMessage("Microsoft.Security", "CA2111:PointersShouldNotBeVisible", Justification = "CLRProfiler.exe is a stand-alone tool, not a library.")]
+            public IntPtr hThread;
+
+            public int dwProcessId;
+            public int dwThreadId;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct IELAUNCHURLINFO
+        {
+            public int cbSize;
+            public int dwCreationFlags;
+            public int dwLaunchOptionFlags;
+        }
+
+        private struct SECURITY_ATTRIBUTES
+        {
+            public uint nLength;
+            public IntPtr lpSecurityDescriptor;
+            public int bInheritHandle;
+        };
+
+        private class WindowsStoreAppProfileeInfo
+        {
+            public string windowsStoreAppEventPrefix;
+
+            public string packageFullName;
+
+            public WindowsStoreAppProfileeInfo(string packageFullNameParam, string acSidString)
+            {
+                packageFullName = packageFullNameParam;
+                windowsStoreAppEventPrefix = string.Format("AppContainerNamedObjects\\{0}\\", acSidString);
+            }
+        }
+
+        #region Windows Form Designer generated code
+
+        /// <summary>
+        /// Required method for Designer support - do not modify
+        /// the contents of this method with the code editor.
+        /// </summary>
+        private void InitializeComponent()
+        {
+            this.components = new System.ComponentModel.Container();
+            this.profilingActiveCheckBox = new System.Windows.Forms.CheckBox();
+            this.openFileDialog = new System.Windows.Forms.OpenFileDialog();
+            this.groupBox1 = new System.Windows.Forms.GroupBox();
+            this.callsCheckBox = new System.Windows.Forms.CheckBox();
+            this.allocationsCheckBox = new System.Windows.Forms.CheckBox();
+            this.logFileOpenMenuItem = new System.Windows.Forms.MenuItem();
+            this.setCommandLineMenuItem = new System.Windows.Forms.MenuItem();
+            this.profileApplicationMenuItem = new System.Windows.Forms.MenuItem();
+            this.profileASP_NETmenuItem = new System.Windows.Forms.MenuItem();
+            this.killApplicationButton = new System.Windows.Forms.Button();
+            this.startApplicationButton = new System.Windows.Forms.Button();
+            this.checkProcessTimer = new System.Windows.Forms.Timer(this.components);
+            this.fontMenuItem = new System.Windows.Forms.MenuItem();
+            this.label1 = new System.Windows.Forms.Label();
+            this.mainMenu = new System.Windows.Forms.MainMenu(this.components);
+            this.menuItem1 = new System.Windows.Forms.MenuItem();
+            this.menuStartWindowsStoreApp = new System.Windows.Forms.MenuItem();
+            this.startURLMenuItem = new System.Windows.Forms.MenuItem();
+            this.attachProcessMenuItem = new System.Windows.Forms.MenuItem();
+            this.detachProcessMenuItem = new System.Windows.Forms.MenuItem();
+            this.profileServiceMenuItem = new System.Windows.Forms.MenuItem();
+            this.saveAsMenuItem = new System.Windows.Forms.MenuItem();
+            this.menuItem3 = new System.Windows.Forms.MenuItem();
+            this.exitMenuItem = new System.Windows.Forms.MenuItem();
+            this.menuItem5 = new System.Windows.Forms.MenuItem();
+            this.menuItem8 = new System.Windows.Forms.MenuItem();
+            this.viewSummaryMenuItem = new System.Windows.Forms.MenuItem();
+            this.viewHistogramAllocatedMenuItem = new System.Windows.Forms.MenuItem();
+            this.viewHistogramRelocatedMenuItem = new System.Windows.Forms.MenuItem();
+            this.viewHistogramFinalizerMenuItem = new System.Windows.Forms.MenuItem();
+            this.viewHistogramCriticalFinalizerMenuItem = new System.Windows.Forms.MenuItem();
+            this.viewObjectsByAddressMenuItem = new System.Windows.Forms.MenuItem();
+            this.viewHistogramByAgeMenuItem = new System.Windows.Forms.MenuItem();
+            this.viewAllocationGraphMenuItem = new System.Windows.Forms.MenuItem();
+            this.viewAssemblyGraphMenuItem = new System.Windows.Forms.MenuItem();
+            this.viewFunctionGraphMenuItem = new System.Windows.Forms.MenuItem();
+            this.viewModuleGraphMenuItem = new System.Windows.Forms.MenuItem();
+            this.viewClassGraphMenuItem = new System.Windows.Forms.MenuItem();
+            this.viewHeapGraphMenuItem = new System.Windows.Forms.MenuItem();
+            this.viewCallGraphMenuItem = new System.Windows.Forms.MenuItem();
+            this.viewTimeLineMenuItem = new System.Windows.Forms.MenuItem();
+            this.viewCommentsMenuItem = new System.Windows.Forms.MenuItem();
+            this.viewCallTreeMenuItem = new System.Windows.Forms.MenuItem();
+            this.menuItem2 = new System.Windows.Forms.MenuItem();
+            this.viewComparisonMenuItem = new System.Windows.Forms.MenuItem();
+            this.showHeapButton = new System.Windows.Forms.Button();
+            this.fontDialog = new System.Windows.Forms.FontDialog();
+            this.saveFileDialog = new System.Windows.Forms.SaveFileDialog();
+            this.attachProcessButton = new System.Windows.Forms.Button();
+            this.groupBox2 = new System.Windows.Forms.GroupBox();
+            this.targetCLRVersioncomboBox = new System.Windows.Forms.ComboBox();
+            this.label2 = new System.Windows.Forms.Label();
+            this.detachProcessButton = new System.Windows.Forms.Button();
+            this.label3 = new System.Windows.Forms.Label();
+            this.textBox1 = new System.Windows.Forms.TextBox();
+            this.groupBox1.SuspendLayout();
+            this.groupBox2.SuspendLayout();
+            this.SuspendLayout();
+            //
+            // profilingActiveCheckBox
+            //
+            this.profilingActiveCheckBox.Location = new System.Drawing.Point(201, 11);
+            this.profilingActiveCheckBox.Name = "profilingActiveCheckBox";
+            this.profilingActiveCheckBox.Size = new System.Drawing.Size(123, 24);
+            this.profilingActiveCheckBox.TabIndex = 7;
+            this.profilingActiveCheckBox.Text = "Profiling active";
+            this.profilingActiveCheckBox.CheckedChanged += new System.EventHandler(this.profilingActiveCheckBox_CheckedChanged);
+            //
+            // groupBox1
+            //
+            this.groupBox1.Controls.Add(this.callsCheckBox);
+            this.groupBox1.Controls.Add(this.allocationsCheckBox);
+            this.groupBox1.Location = new System.Drawing.Point(194, 42);
+            this.groupBox1.Name = "groupBox1";
+            this.groupBox1.Size = new System.Drawing.Size(133, 57);
+            this.groupBox1.TabIndex = 7;
+            this.groupBox1.TabStop = false;
+            //
+            // callsCheckBox
+            //
+            this.callsCheckBox.ForeColor = System.Drawing.SystemColors.AppWorkspace;
+            this.callsCheckBox.Location = new System.Drawing.Point(16, 32);
+            this.callsCheckBox.Name = "callsCheckBox";
+            this.callsCheckBox.Size = new System.Drawing.Size(94, 18);
+            this.callsCheckBox.TabIndex = 9;
+            this.callsCheckBox.Text = "Calls";
+            this.callsCheckBox.CheckedChanged += new System.EventHandler(this.callsCheckBox_CheckedChanged);
+            //
+            // allocationsCheckBox
+            //
+            this.allocationsCheckBox.Checked = true;
+            this.allocationsCheckBox.CheckState = System.Windows.Forms.CheckState.Checked;
+            this.allocationsCheckBox.Location = new System.Drawing.Point(16, 15);
+            this.allocationsCheckBox.Name = "allocationsCheckBox";
+            this.allocationsCheckBox.Size = new System.Drawing.Size(90, 20);
+            this.allocationsCheckBox.TabIndex = 8;
+            this.allocationsCheckBox.Text = "Allocations";
+            this.allocationsCheckBox.CheckedChanged += new System.EventHandler(this.allocationsCheckBox_CheckedChanged);
+            //
+            // logFileOpenMenuItem
+            //
+            this.logFileOpenMenuItem.Index = 0;
+            this.logFileOpenMenuItem.Shortcut = System.Windows.Forms.Shortcut.CtrlO;
+            this.logFileOpenMenuItem.Text = "Open Log File...";
+            this.logFileOpenMenuItem.Click += new System.EventHandler(this.fileOpenMenuItem_Click);
+            //
+            // setCommandLineMenuItem
+            //
+            this.setCommandLineMenuItem.Index = 9;
+            this.setCommandLineMenuItem.Text = "Set Parameters...";
+            this.setCommandLineMenuItem.Click += new System.EventHandler(this.setCommandLineMenuItem_Click);
+            //
+            // profileApplicationMenuItem
+            //
+            this.profileApplicationMenuItem.Index = 1;
+            this.profileApplicationMenuItem.Text = "Profile Application...";
+            this.profileApplicationMenuItem.Click += new System.EventHandler(this.profileApplicationMenuItem_Click);
+            //
+            // profileASP_NETmenuItem
+            //
+            this.profileASP_NETmenuItem.Index = 6;
+            this.profileASP_NETmenuItem.Text = "Profile ASP.NET";
+            this.profileASP_NETmenuItem.Click += new System.EventHandler(this.profileASP_NETmenuItem_Click);
+            //
+            // killApplicationButton
+            //
+            this.killApplicationButton.Location = new System.Drawing.Point(15, 147);
+            this.killApplicationButton.Name = "killApplicationButton";
+            this.killApplicationButton.Size = new System.Drawing.Size(164, 24);
+            this.killApplicationButton.TabIndex = 5;
+            this.killApplicationButton.Text = "Kill Application";
+            this.killApplicationButton.Click += new System.EventHandler(this.killApplicationButton_Click);
+            //
+            // startApplicationButton
+            //
+            this.startApplicationButton.Location = new System.Drawing.Point(15, 12);
+            this.startApplicationButton.Name = "startApplicationButton";
+            this.startApplicationButton.Size = new System.Drawing.Size(164, 24);
+            this.startApplicationButton.TabIndex = 1;
+            this.startApplicationButton.Text = "Start Desktop App...";
+            this.startApplicationButton.Click += new System.EventHandler(this.startApplicationButton_Click);
+            //
+            // checkProcessTimer
+            //
+            this.checkProcessTimer.Enabled = true;
+            this.checkProcessTimer.Tick += new System.EventHandler(this.checkProcessTimer_Tick);
+            //
+            // fontMenuItem
+            //
+            this.fontMenuItem.Index = 0;
+            this.fontMenuItem.Text = "Font...";
+            this.fontMenuItem.Click += new System.EventHandler(this.fontMenuItem_Click);
+            //
+            // label1
+            //
+            this.label1.Location = new System.Drawing.Point(198, 38);
+            this.label1.Name = "label1";
+            this.label1.Size = new System.Drawing.Size(40, 16);
+            this.label1.TabIndex = 6;
+            this.label1.Text = "Profile:";
+            //
+            // mainMenu
+            //
+            this.mainMenu.MenuItems.AddRange(new System.Windows.Forms.MenuItem[] {
+            this.menuItem1,
+            this.menuItem5,
+            this.menuItem8});
+            //
+            // menuItem1
+            //
+            this.menuItem1.Index = 0;
+            this.menuItem1.MenuItems.AddRange(new System.Windows.Forms.MenuItem[] {
+            this.logFileOpenMenuItem,
+            this.profileApplicationMenuItem,
+            this.menuStartWindowsStoreApp,
+            this.startURLMenuItem,
+            this.attachProcessMenuItem,
+            this.detachProcessMenuItem,
+            this.profileASP_NETmenuItem,
+            this.profileServiceMenuItem,
+            this.saveAsMenuItem,
+            this.setCommandLineMenuItem,
+            this.menuItem3,
+            this.exitMenuItem});
+            this.menuItem1.Text = "File";
+            this.menuItem1.Click += new System.EventHandler(this.menuItem1_Click);
+            //
+            // menuStartWindowsStoreApp
+            //
+            this.menuStartWindowsStoreApp.Index = 2;
+            this.menuStartWindowsStoreApp.Text = "Profile Windows Store Application...";
+            this.menuStartWindowsStoreApp.Click += new System.EventHandler(this.menuStartWindowsStoreApp_Click);
+            //
+            // startURLMenuItem
+            //
+            this.startURLMenuItem.Index = 3;
+            this.startURLMenuItem.Text = "Start URL...";
+            this.startURLMenuItem.Click += new System.EventHandler(this.startURLMenuItem_Click);
+            //
+            // attachProcessMenuItem
+            //
+            this.attachProcessMenuItem.Index = 4;
+            this.attachProcessMenuItem.Text = "Attach Process...";
+            this.attachProcessMenuItem.Click += new System.EventHandler(this.attachProcessMenuItem_Click);
+            //
+            // detachProcessMenuItem
+            //
+            this.detachProcessMenuItem.Enabled = false;
+            this.detachProcessMenuItem.Index = 5;
+            this.detachProcessMenuItem.Text = "Detach Process";
+            this.detachProcessMenuItem.Click += new System.EventHandler(this.detachProcessMenuItem_Click);
+            //
+            // profileServiceMenuItem
+            //
+            this.profileServiceMenuItem.Index = 7;
+            this.profileServiceMenuItem.Text = "Profile Service...";
+            this.profileServiceMenuItem.Click += new System.EventHandler(this.profileServiceMenuItem_Click);
+            //
+            // saveAsMenuItem
+            //
+            this.saveAsMenuItem.Enabled = false;
+            this.saveAsMenuItem.Index = 8;
+            this.saveAsMenuItem.Shortcut = System.Windows.Forms.Shortcut.CtrlS;
+            this.saveAsMenuItem.Text = "Save Profile As...";
+            this.saveAsMenuItem.Click += new System.EventHandler(this.saveAsMenuItem_Click);
+            //
+            // menuItem3
+            //
+            this.menuItem3.Index = 10;
+            this.menuItem3.Text = "-";
+            //
+            // exitMenuItem
+            //
+            this.exitMenuItem.Index = 11;
+            this.exitMenuItem.Text = "Exit";
+            this.exitMenuItem.Click += new System.EventHandler(this.exitMenuItem_Click);
+            //
+            // menuItem5
+            //
+            this.menuItem5.Index = 1;
+            this.menuItem5.MenuItems.AddRange(new System.Windows.Forms.MenuItem[] {
+            this.fontMenuItem});
+            this.menuItem5.Text = "Edit";
+            //
+            // menuItem8
+            //
+            this.menuItem8.Index = 2;
+            this.menuItem8.MenuItems.AddRange(new System.Windows.Forms.MenuItem[] {
+            this.viewSummaryMenuItem,
+            this.viewHistogramAllocatedMenuItem,
+            this.viewHistogramRelocatedMenuItem,
+            this.viewHistogramFinalizerMenuItem,
+            this.viewHistogramCriticalFinalizerMenuItem,
+            this.viewObjectsByAddressMenuItem,
+            this.viewHistogramByAgeMenuItem,
+            this.viewAllocationGraphMenuItem,
+            this.viewAssemblyGraphMenuItem,
+            this.viewFunctionGraphMenuItem,
+            this.viewModuleGraphMenuItem,
+            this.viewClassGraphMenuItem,
+            this.viewHeapGraphMenuItem,
+            this.viewCallGraphMenuItem,
+            this.viewTimeLineMenuItem,
+            this.viewCommentsMenuItem,
+            this.viewCallTreeMenuItem,
+            this.menuItem2,
+            this.viewComparisonMenuItem});
+            this.menuItem8.Text = "View";
+            //
+            // viewSummaryMenuItem
+            //
+            this.viewSummaryMenuItem.Index = 0;
+            this.viewSummaryMenuItem.Text = "Summary";
+            this.viewSummaryMenuItem.Click += new System.EventHandler(this.viewSummaryMenuItem_Click);
+            //
+            // viewHistogramAllocatedMenuItem
+            //
+            this.viewHistogramAllocatedMenuItem.Index = 1;
+            this.viewHistogramAllocatedMenuItem.Text = "Histogram Allocated Types";
+            this.viewHistogramAllocatedMenuItem.Click += new System.EventHandler(this.viewHistogram_Click);
+            //
+            // viewHistogramRelocatedMenuItem
+            //
+            this.viewHistogramRelocatedMenuItem.Index = 2;
+            this.viewHistogramRelocatedMenuItem.Text = "Histogram Relocated Types";
+            this.viewHistogramRelocatedMenuItem.Click += new System.EventHandler(this.viewHistogramRelocatedMenuItem_Click);
+            //
+            // viewHistogramFinalizerMenuItem
+            //
+            this.viewHistogramFinalizerMenuItem.Index = 3;
+            this.viewHistogramFinalizerMenuItem.Text = "Histogram Finalized Types";
+            this.viewHistogramFinalizerMenuItem.Click += new System.EventHandler(this.viewHistogramFinalizerMenuItem_Click);
+            //
+            // viewHistogramCriticalFinalizerMenuItem
+            //
+            this.viewHistogramCriticalFinalizerMenuItem.Index = 4;
+            this.viewHistogramCriticalFinalizerMenuItem.Text = "Histogram Critical Finalized Types";
+            this.viewHistogramCriticalFinalizerMenuItem.Click += new System.EventHandler(this.viewHistogramCriticalFinalizerMenuItem_Click);
+            //
+            // viewObjectsByAddressMenuItem
+            //
+            this.viewObjectsByAddressMenuItem.Index = 5;
+            this.viewObjectsByAddressMenuItem.Text = "Objects by Address";
+            this.viewObjectsByAddressMenuItem.Click += new System.EventHandler(this.viewByAddressMenuItem_Click);
+            //
+            // viewHistogramByAgeMenuItem
+            //
+            this.viewHistogramByAgeMenuItem.Index = 6;
+            this.viewHistogramByAgeMenuItem.Text = "Histogram by Age";
+            this.viewHistogramByAgeMenuItem.Click += new System.EventHandler(this.viewAgeHistogram_Click);
+            //
+            // viewAllocationGraphMenuItem
+            //
+            this.viewAllocationGraphMenuItem.Index = 7;
+            this.viewAllocationGraphMenuItem.Text = "Allocation Graph";
+            this.viewAllocationGraphMenuItem.Click += new System.EventHandler(this.viewAllocationGraphmenuItem_Click);
+            //
+            // viewAssemblyGraphMenuItem
+            //
+            this.viewAssemblyGraphMenuItem.Index = 8;
+            this.viewAssemblyGraphMenuItem.Text = "Assembly Graph";
+            this.viewAssemblyGraphMenuItem.Click += new System.EventHandler(this.viewAssemblyGraphmenuItem_Click);
+            //
+            // viewFunctionGraphMenuItem
+            //
+            this.viewFunctionGraphMenuItem.Index = 9;
+            this.viewFunctionGraphMenuItem.Text = "Function Graph";
+            this.viewFunctionGraphMenuItem.Click += new System.EventHandler(this.viewFunctionGraphMenuItem_Click);
+            //
+            // viewModuleGraphMenuItem
+            //
+            this.viewModuleGraphMenuItem.Index = 10;
+            this.viewModuleGraphMenuItem.Text = "Module Graph";
+            this.viewModuleGraphMenuItem.Click += new System.EventHandler(this.viewModuleGraphMenuItem_Click);
+            //
+            // viewClassGraphMenuItem
+            //
+            this.viewClassGraphMenuItem.Index = 11;
+            this.viewClassGraphMenuItem.Text = "Class Graph";
+            this.viewClassGraphMenuItem.Click += new System.EventHandler(this.viewClassGraphMenuItem_Click);
+            //
+            // viewHeapGraphMenuItem
+            //
+            this.viewHeapGraphMenuItem.Index = 12;
+            this.viewHeapGraphMenuItem.Text = "Heap Graph";
+            this.viewHeapGraphMenuItem.Click += new System.EventHandler(this.viewHeapGraphMenuItem_Click);
+            //
+            // viewCallGraphMenuItem
+            //
+            this.viewCallGraphMenuItem.Index = 13;
+            this.viewCallGraphMenuItem.Text = "Call Graph";
+            this.viewCallGraphMenuItem.Click += new System.EventHandler(this.viewCallGraphMenuItem_Click);
+            //
+            // viewTimeLineMenuItem
+            //
+            this.viewTimeLineMenuItem.Index = 14;
+            this.viewTimeLineMenuItem.Text = "Time Line";
+            this.viewTimeLineMenuItem.Click += new System.EventHandler(this.viewTimeLineMenuItem_Click);
+            //
+            // viewCommentsMenuItem
+            //
+            this.viewCommentsMenuItem.Index = 15;
+            this.viewCommentsMenuItem.Text = "Comments";
+            this.viewCommentsMenuItem.Click += new System.EventHandler(this.viewCommentsMenuItem_Click);
+            //
+            // viewCallTreeMenuItem
+            //
+            this.viewCallTreeMenuItem.Index = 16;
+            this.viewCallTreeMenuItem.Text = "Call Tree";
+            this.viewCallTreeMenuItem.Click += new System.EventHandler(this.viewCallTreeMenuItem_Click);
+            //
+            // menuItem2
+            //
+            this.menuItem2.Index = 17;
+            this.menuItem2.Text = "-----------------------------";
+            //
+            // viewComparisonMenuItem
+            //
+            this.viewComparisonMenuItem.Index = 18;
+            this.viewComparisonMenuItem.Text = "Comparison with ...";
+            this.viewComparisonMenuItem.Click += new System.EventHandler(this.viewComparisonMenuItem_Click);
+            //
+            // showHeapButton
+            //
+            this.showHeapButton.Location = new System.Drawing.Point(15, 174);
+            this.showHeapButton.Name = "showHeapButton";
+            this.showHeapButton.Size = new System.Drawing.Size(164, 24);
+            this.showHeapButton.TabIndex = 6;
+            this.showHeapButton.Text = "Show Heap now";
+            this.showHeapButton.Click += new System.EventHandler(this.showHeapButton_Click);
+            //
+            // fontDialog
+            //
+            this.fontDialog.Color = System.Drawing.SystemColors.ControlText;
+            //
+            // saveFileDialog
+            //
+            this.saveFileDialog.FileName = "doc1";
+            //
+            // attachProcessButton
+            //
+            this.attachProcessButton.Location = new System.Drawing.Point(15, 93);
+            this.attachProcessButton.Name = "attachProcessButton";
+            this.attachProcessButton.Size = new System.Drawing.Size(164, 24);
+            this.attachProcessButton.TabIndex = 3;
+            this.attachProcessButton.Text = "Attach Process...";
+            this.attachProcessButton.UseVisualStyleBackColor = true;
+            this.attachProcessButton.Click += new System.EventHandler(this.attachProcessButton_Click);
+            //
+            // groupBox2
+            //
+            this.groupBox2.Controls.Add(this.targetCLRVersioncomboBox);
+            this.groupBox2.Controls.Add(this.label2);
+            this.groupBox2.Location = new System.Drawing.Point(194, 144);
+            this.groupBox2.Name = "groupBox2";
+            this.groupBox2.Size = new System.Drawing.Size(132, 54);
+            this.groupBox2.TabIndex = 11;
+            this.groupBox2.TabStop = false;
+            //
+            // targetCLRVersioncomboBox
+            //
+            this.targetCLRVersioncomboBox.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.targetCLRVersioncomboBox.FormattingEnabled = true;
+            this.targetCLRVersioncomboBox.Items.AddRange(new object[] {
+            "V4 Desktop CLR",
+            "V4 Core CLR",
+            "V2 Desktop CLR"});
+            this.targetCLRVersioncomboBox.Location = new System.Drawing.Point(7, 22);
+            this.targetCLRVersioncomboBox.Name = "targetCLRVersioncomboBox";
+            this.targetCLRVersioncomboBox.Size = new System.Drawing.Size(114, 21);
+            this.targetCLRVersioncomboBox.TabIndex = 10;
+            this.targetCLRVersioncomboBox.SelectedIndexChanged += new System.EventHandler(this.targetCLRVersioncomboBox_SelectedIndexChanged);
+            //
+            // label2
+            //
+            this.label2.Location = new System.Drawing.Point(6, 0);
+            this.label2.Name = "label2";
+            this.label2.Size = new System.Drawing.Size(120, 19);
+            this.label2.TabIndex = 12;
+            this.label2.Text = "Target CLR Version:";
+            //
+            // detachProcessButton
+            //
+            this.detachProcessButton.Enabled = false;
+            this.detachProcessButton.Location = new System.Drawing.Point(15, 120);
+            this.detachProcessButton.Name = "detachProcessButton";
+            this.detachProcessButton.Size = new System.Drawing.Size(164, 24);
+            this.detachProcessButton.TabIndex = 4;
+            this.detachProcessButton.Text = "Detach Process";
+            this.detachProcessButton.UseVisualStyleBackColor = true;
+            this.detachProcessButton.Click += new System.EventHandler(this.detachProcessButton_Click);
+            //
+            // label3
+            //
+            this.label3.Location = new System.Drawing.Point(198, 111);
+            this.label3.Name = "label3";
+            this.label3.Size = new System.Drawing.Size(102, 17);
+            this.label3.TabIndex = 13;
+            this.label3.Text = "Sampling% SOH:";
+            //
+            // textBox1
+            //
+            this.textBox1.Location = new System.Drawing.Point(288, 108);
+            this.textBox1.Name = "textBox1";
+            this.textBox1.Size = new System.Drawing.Size(36, 20);
+            this.textBox1.TabIndex = 14;
+            this.textBox1.Text = "100";
+            //
+            // MainForm
+            //
+            this.ClientSize = new System.Drawing.Size(341, 208);
+            this.Controls.Add(this.textBox1);
+            this.Controls.Add(this.label3);
+            this.Controls.Add(this.label1);
+            this.Controls.Add(this.detachProcessButton);
+            this.Controls.Add(this.groupBox2);
+            this.Controls.Add(this.attachProcessButton);
+            this.Controls.Add(this.showHeapButton);
+            this.Controls.Add(this.profilingActiveCheckBox);
+            this.Controls.Add(this.groupBox1);
+            this.Controls.Add(this.killApplicationButton);
+            this.Controls.Add(this.startApplicationButton);
+            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
+            this.MaximizeBox = false;
+            this.Menu = this.mainMenu;
+            this.Name = "MainForm";
+            this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
+            this.Text = "CLR Profiler Light";
+            this.Closing += new System.ComponentModel.CancelEventHandler(this.Form1_Closing);
+            this.groupBox1.ResumeLayout(false);
+            this.groupBox2.ResumeLayout(false);
+            this.ResumeLayout(false);
+            this.PerformLayout();
+        }
+
+        #endregion
+
+        private class ConsoleCtrl
+        {
+            private ControlEventHandler eventHandler;
+
+            internal ConsoleCtrl()
+            {
+                // save this to a private var so the GC doesn't collect it...
+                eventHandler = new ControlEventHandler(Handler);
+                SetConsoleCtrlHandler(eventHandler, true);
+            }
+
+            internal delegate bool ControlEventHandler(ConsoleEvent consoleEvent);
+
+            internal event ControlEventHandler ControlEvent;
+
+            internal enum ConsoleEvent
+            {
+                CTRL_C = 0,           // From wincom.h
+                CTRL_BREAK = 1,
+                CTRL_CLOSE = 2,
+                CTRL_LOGOFF = 5,
+                CTRL_SHUTDOWN = 6
+            }
+
+            [DllImport("kernel32.dll")]
+            private static extern bool SetConsoleCtrlHandler(ControlEventHandler e, bool add);
+
+            private bool Handler(ConsoleEvent consoleEvent)
+            {
+                if (ControlEvent != null)
+                    return ControlEvent(consoleEvent);
+                return false;
+            }
         }
     }
 }
